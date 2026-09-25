@@ -7,7 +7,6 @@
 <meta name="theme-color" content="#1e6f9f">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
 <link rel="stylesheet" href="style.css">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 <div class="app">
@@ -22,26 +21,47 @@
         </div>
       </div>
       <div class="header-left">
-        <div class="user-info" id="userInfo" style="display:none">
-  <span class="user-name"></span>
-  <span class="user-username"></span>
-</div>
         <div class="global-search">
           <input type="text" id="globalSearch" placeholder="🔍 جست‌وجو..." autocomplete="off">
           <div class="global-search-results" id="globalSearchResults"></div>
         </div>
         <div class="theme-quick" id="themeQuick">
           <button id="btnThemeQuick" class="btn btn-icon" title="تغییر تم">🌙</button>
-          <button id="authBtn" class="btn btn-outline">🔐 ورود</button>
           <div class="theme-dropdown" id="themeDropdown"></div>
         </div>
         <button id="btnExportTxt" class="btn btn-outline" title="خروجی TXT">📄 TXT</button>
         <button id="btnExportPdf" class="btn btn-outline" title="خروجی PDF">🖨️ PDF</button>
         <button id="btnBackup" class="btn btn-outline" title="بکاپ JSON">💾 بکاپ</button>
         <button id="btnRestore" class="btn btn-outline" title="بازیابی JSON">📂 بازیابی</button>
+        <button id="authBtn" class="btn btn-primary">🔐 ورود</button>
         <input type="file" id="fileRestore" accept=".json" hidden>
       </div>
     </div>
+    <div class="user-dropdown" id="userDropdown" style="display:none">
+  <button class="user-trigger" id="userTrigger">
+    <span class="user-avatar">👤</span>
+    <span class="user-name"></span>
+    <span class="user-arrow">▾</span>
+  </button>
+  <div class="user-menu" id="userMenu">
+    <div class="user-menu-header">
+      <span class="user-avatar-lg">👤</span>
+      <div class="user-menu-info">
+        <span class="user-name"></span>
+        <span class="user-username"></span>
+      </div>
+    </div>
+    <button class="user-menu-item" id="userMenuBackup">
+      <span>📦</span> بکاپ ابری
+    </button>
+    <button class="user-menu-item" id="userMenuLink">
+      <span>🔗</span> اتصال به بات
+    </button>
+    <button class="user-menu-item user-menu-item-danger" id="userLogoutBtn">
+      <span>🚪</span> خروج از حساب
+    </button>
+  </div>
+</div>
     <div id="alertBar" class="alert-bar"></div>
     <div class="save-status" id="saveStatus"></div>
   </header>
@@ -70,6 +90,7 @@
 
   <main class="tab-content">
 
+    <!-- ===== تب خانه ===== -->
     <section class="tab-panel active" id="tab-dashboard" data-group="home">
       <div class="stat-cards" id="statCards"></div>
       <div class="progress-section card">
@@ -126,6 +147,7 @@
       </div>
     </section>
 
+    <!-- ===== تب کار و دروس ===== -->
     <section class="tab-panel" id="tab-tasks" data-group="tasks">
       <div class="card filter-card">
         <h3>🔍 جست‌وجو و فیلتر</h3>
@@ -278,6 +300,7 @@
       </div>
     </section>
 
+    <!-- ===== تب برنامه ===== -->
     <section class="tab-panel" id="tab-calendar" data-group="schedule">
       <div class="card">
         <div class="calendar-header">
@@ -337,6 +360,7 @@
       </div>
     </section>
 
+    <!-- ===== تب بیشتر ===== -->
     <section class="tab-panel" id="tab-note" data-group="more">
       <div class="card">
         <h3>📝 یادداشت شخصی</h3>
@@ -397,27 +421,109 @@
         <h2>ℹ️ درباره و راهنمایی</h2>
 
         <div class="about-section">
-          <h3>درباره برنامه</h3>
-          <p>مدیریت تکالیف مدرسه، یه برنامه ساده و کامل برای مدیریت کارهای دانش‌آموزی.</p>
+          <h3>📚 درباره برنامه</h3>
+          <p>مدیریت تکالیف مدرسه، یه برنامه ساده و کامل برای مدیریت کارهای دانش‌آموزی هست.</p>
           <ul>
-            <li><strong>نسخه:</strong> ۳</li>
-            <li><strong>فناوری:</strong> HTML + CSS + JavaScript خالص</li>
-            <li><strong>ذخیره‌سازی:</strong> localStorage</li>
+            <li><strong>نسخه:</strong> ۳.۵</li>
+            <li><strong>فناوری:</strong> HTML + CSS + JavaScript + Supabase</li>
+            <li><strong>ذخیره‌سازی:</strong> localStorage + ابر (Supabase)</li>
           </ul>
         </div>
-<div class="about-section">
-  <h3>🔐 حساب کاربری</h3>
-  <p>با ساخت حساب کاربری، داده‌ها توی ابر ذخیره می‌شن و از هر دستگاهی قابل دسترسن.</p>
-  <ul>
-    <li>بدون حساب: داده‌ها فقط روی همین دستگاه</li>
-    <li>با حساب: داده‌ها روی ابر + دستگاه</li>
-    <li>برای اتصال بات بله: از تنظیمات کد بگیر</li>
-  </ul>
-  <button class="btn btn-primary" onclick="showAuthModal('login')">🔐 ورود / ثبت‌نام</button>
-  <button class="btn btn-secondary" onclick="generateLinkCode()">🔗 اتصال به بات بله</button>
-</div>
+
         <div class="about-section">
-          <h3>کلیدهای میانبر</h3>
+          <h3>🔐 حساب کاربری</h3>
+          <p>با ساخت حساب کاربری، داده‌ها توی ابر ذخیره می‌شن و از هر دستگاهی قابل دسترسن. همچنین می‌تونی بات بله رو وصل کنی.</p>
+          <div class="about-actions">
+            <button class="btn btn-primary" id="aboutAuthBtn">🔐 ورود / ثبت‌نام</button>
+            <button class="btn btn-secondary" id="aboutLinkBtn">🔗 اتصال به بات بله</button>
+          </div>
+          <div id="aboutAccountStatus" class="account-status"></div>
+        </div>
+
+        <div class="about-section">
+          <h3>📖 راهنمای استفاده</h3>
+
+          <details>
+            <summary>چطور کار اضافه کنم؟</summary>
+            <p>روی دکمه شناور ➕ پایین صفحه کلیک کن. فرم رو پر کن و ذخیره بزن.</p>
+          </details>
+
+          <details>
+            <summary>چطور برنامه هفتگی رو تنظیم کنم؟</summary>
+            <p>به تب «برنامه → برنامه هفتگی» برو. اسم درس هر زنگ رو وارد کن. ساعت شروع و پایان هر زنگ رو هم می‌تونی وارد کنی.</p>
+          </details>
+
+          <details>
+            <summary>چطور از تقویم استفاده کنم؟</summary>
+            <p>به تب «برنامه → تقویم» برو. روزها با رنگ‌بندی وضعیت کارها نمایش داده می‌شن. روی هر روز کلیک کن تا کارهای اون روز رو ببینی.</p>
+          </details>
+
+          <details>
+            <summary>چطور آمار بگیرم؟</summary>
+            <p>به تب «کار و دروس → آمار» برو. آمار کلی، بر اساس درس، اولویت، نوع، روز هفته و بازه‌ای نمایش داده می‌شه.</p>
+          </details>
+
+          <details>
+            <summary>چطور یادداشت اضافه کنم؟</summary>
+            <p>توی صفحه هر درس، تب یادداشت‌ها → دکمه «➕ یادداشت جدید». یا توی «بیشتر → یادداشت شخصی».</p>
+          </details>
+
+          <details>
+            <summary>چطور بکاپ بگیرم و برگردونم؟</summary>
+            <p>از هدر یا تنظیمات، دکمه «بکاپ JSON» رو بزن تا فایل بکاپ دانلود بشه. برای بازیابی، «بازیابی JSON» رو بزن و فایل رو انتخاب کن.</p>
+          </details>
+
+          <details>
+            <summary>چطور حساب کاربری بسازم؟</summary>
+            <p>روی دکمه «🔐 ورود» توی هدر کلیک کن. تب «ثبت‌نام» رو بزن. اسم، نام کاربری (انگلیسی) و پسورد رو وارد کن.</p>
+          </details>
+
+          <details>
+            <summary>چطور بات بله رو وصل کنم؟</summary>
+            <p>بعد از لاگین، توی «درباره → اتصال به بات بله» کد ۶ رقمی بگیر. توی بات بله بزن: <code>784512</code> یا <code>/link 784512</code>.</p>
+          </details>
+
+          <details>
+            <summary>چطور تم رو عوض کنم؟</summary>
+            <p>از هدر (دکمه سریع) یا از تنظیمات (همه تم‌ها) می‌تونی تم رو عوض کنی.</p>
+          </details>
+        </div>
+
+        <div class="about-section">
+          <h3>🎓 راهنمای پیشرفته</h3>
+
+          <details>
+            <summary>حضوری و آفلاین چیه؟</summary>
+            <p><strong>حضوری:</strong> کارهایی که روز و ساعت تحویل مشخصی دارن و به برنامه هفتگی وصل می‌شن. توی خونه تحویلشون با 📌 مشخص می‌شن.</p>
+            <p><strong>آفلاین:</strong> کارهایی که ساعت آزاد دارن و فقط درسشون به برنامه هفتگی وصله.</p>
+          </details>
+
+          <details>
+            <summary>کارها توی برنامه هفتگی چطور نمایش داده می‌شن؟</summary>
+            <p>هر کار توی همه زنگ‌های درسش (قبل از موعد و خود موعد) نمایش داده می‌شه. بعد از موعد، اگه انجام نشده باشه با برچسب «عقب‌افتاده» و اگه انجام شده باشه، حذف می‌شه.</p>
+          </details>
+
+          <details>
+            <summary>زیرکارها چطور کار می‌کنن؟</summary>
+            <p>هر کار می‌تونه چند زیرکار داشته باشه. توی کارت کار، ۳ تای اول نمایش داده می‌شن. برای دیدن همه، روی عنوان کار کلیک کن و توی پنل جزئیات همه رو ببین و مدیریت کن.</p>
+          </details>
+
+          <details>
+            <summary>رنگ‌بندی تقویم چطوره؟</summary>
+            <p><span style="color:green">🟢 سبز:</span> همه کارها انجام شده</p>
+            <p><span style="color:orange">🟠 نارنجی:</span> کار انجام‌نشده (هنوز موعد نرسیده)</p>
+            <p><span style="color:red">🔴 قرمز:</span> کار عقب‌افتاده داره</p>
+          </details>
+
+          <details>
+            <summary>تفاوت حالت مهمان و لاگین چیه؟</summary>
+            <p><strong>مهمان:</strong> داده‌ها فقط روی دستگاه خودت (localStorage). اگه مرورگر پاک بشه، داده‌ها می‌رن.</p>
+            <p><strong>لاگین:</strong> داده‌ها روی ابر (Supabase) + دستگاه. از هر دستگاهی قابل دسترس. امکان اتصال بات.</p>
+          </details>
+        </div>
+
+        <div class="about-section">
+          <h3>⌨️ کلیدهای میانبر</h3>
           <table class="shortcuts-table">
             <tr><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd></td><td>افزودن کار</td></tr>
             <tr><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Q</kbd></td><td>تب خانه</td></tr>
@@ -433,10 +539,27 @@
         </div>
 
         <div class="about-section">
-          <h3>سوالات متداول</h3>
-          <details><summary>داده‌هام کجا ذخیره می‌شه؟</summary><p>توی localStorage مرورگر. حتماً بکاپ بگیر.</p></details>
-          <details><summary>برنامه روزانه چیه؟</summary><p>برای هر روز، برنامه‌های خودت رو مثل کاغذ یادداشت می‌نویسی. با دکمه‌های روز قبل و بعد می‌تونی جابه‌جا بشی.</p></details>
-          <details><summary>دفترچه یادداشت درسی کجاست؟</summary><p>توی تب «کار و دروس» → روی هر درس کلیک کن → تب یادداشت‌ها.</p></details>
+          <h3>❓ سوالات متداول</h3>
+          <details>
+            <summary>داده‌هام کجا ذخیره می‌شه؟</summary>
+            <p>توی حالت مهمان: فقط localStorage. توی حالت لاگین: localStorage + Supabase.</p>
+          </details>
+          <details>
+            <summary>چرا برنامه هفتگی خالیه؟</summary>
+            <p>چون هنوز اسم درسی وارد نکردی. به تب «برنامه → برنامه هفتگی» برو و برای هر زنگ، اسم درس را وارد کن.</p>
+          </details>
+          <details>
+            <summary>چطور درس جدید اضافه کنم؟</summary>
+            <p>کافیه توی برنامه هفتگی، یه خونه رو پر کنی با اسم درس جدید. بعد توی فرم افزودن کار، اون درس توی منوی کشویی ظاهر می‌شه.</p>
+          </details>
+          <details>
+            <summary>بات بله چیه؟ چطور کار می‌کنه؟</summary>
+            <p>یه بات توی پیام‌رسان بله که به همون اکانت وب اپت وصل می‌شه. از اونجا هم می‌تونی کار اضافه کنی و هم داده‌ها رو ببینی.</p>
+          </details>
+          <details>
+            <summary>چرا بعد از لاگین، داده‌هام نمایش داده نمی‌شن؟</summary>
+            <p>اگه توی حالت مهمان داده داشتی، بعد از لاگین ازت پرسیده می‌شه که منتقل بشن یا نه. اگه منتقل شدن، چند ثانیه صبر کن تا sync بشن.</p>
+          </details>
         </div>
       </div>
     </section>
@@ -591,68 +714,79 @@
     </div>
   </div>
 
+  <!-- مودال لاگین -->
+  <div class="auth-modal" id="authModal">
+    <div class="auth-box">
+      <button class="auth-close" onclick="hideAuthModal()">✖</button>
+      <div class="auth-tabs">
+        <button class="auth-tab active" data-auth-tab="login" onclick="switchAuthTab('login')">ورود</button>
+        <button class="auth-tab" data-auth-tab="signup" onclick="switchAuthTab('signup')">ثبت‌نام</button>
+      </div>
+
+      <div class="auth-panel active" data-auth-panel="login">
+        <h3>🔐 ورود به حساب</h3>
+        <form onsubmit="handleLogin(event)">
+          <div class="form-group">
+            <label>نام کاربری</label>
+            <input type="text" id="loginUsername" placeholder="username" autocomplete="username">
+          </div>
+          <div class="form-group">
+            <label>پسورد</label>
+            <input type="password" id="loginPassword" placeholder="••••••" autocomplete="current-password">
+          </div>
+          <div class="auth-error" id="authError"></div>
+          <button type="submit" class="btn btn-primary btn-block" id="loginBtn">ورود</button>
+        </form>
+      </div>
+
+      <div class="auth-panel" data-auth-panel="signup">
+        <h3>📝 ثبت‌نام</h3>
+        <form onsubmit="handleSignup(event)">
+          <div class="form-group">
+            <label>اسم</label>
+            <input type="text" id="signupFirstName" placeholder="مثلاً: علی">
+          </div>
+          <div class="form-group">
+            <label>نام کاربری (انگلیسی)</label>
+            <input type="text" id="signupUsername" placeholder="ali_ahmadi" autocomplete="username">
+          </div>
+          <div class="form-group">
+            <label>پسورد</label>
+            <input type="password" id="signupPassword" placeholder="حداقل ۶ کاراکتر" autocomplete="new-password">
+          </div>
+          <div class="form-group">
+            <label>تکرار پسورد</label>
+            <input type="password" id="signupPassword2" placeholder="••••••" autocomplete="new-password">
+          </div>
+          <div class="auth-error" id="authErrorSignup"></div>
+          <button type="submit" class="btn btn-primary btn-block" id="signupBtn">ثبت‌نام</button>
+        </form>
+      </div>
+
+      <div class="auth-footer">
+        <p>با حساب کاربری، داده‌ها توی ابر ذخیره می‌شن و از هر دستگاهی قابل دسترسن.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- مودال کد اتصال به بات -->
+  <div class="modal-overlay" id="linkModal">
+    <div class="modal" style="max-width:500px">
+      <div class="modal-header">
+        <h3>🔗 اتصال به بات بله</h3>
+        <button class="btn btn-icon" onclick="document.getElementById('linkModal').classList.remove('show')">✖</button>
+      </div>
+      <div class="modal-body" id="linkModalBody"></div>
+    </div>
+  </div>
+
   <div class="toast-container" id="toastContainer"></div>
 
 </div>
-<!-- مودال لاگین -->
-<div class="auth-modal" id="authModal">
-  <div class="auth-box">
-    <button class="auth-close" onclick="hideAuthModal()">✖</button>
 
-    <div class="auth-tabs">
-      <button class="auth-tab active" data-auth-tab="login" onclick="switchAuthTab('login')">ورود</button>
-      <button class="auth-tab" data-auth-tab="signup" onclick="switchAuthTab('signup')">ثبت‌نام</button>
-    </div>
-
-    <div class="auth-panel active" data-auth-panel="login">
-      <h3>🔐 ورود به حساب</h3>
-      <form onsubmit="handleLogin(event)">
-        <div class="form-group">
-          <label>نام کاربری</label>
-          <input type="text" id="loginUsername" placeholder="username" autocomplete="username">
-        </div>
-        <div class="form-group">
-          <label>پسورد</label>
-          <input type="password" id="loginPassword" placeholder="••••••" autocomplete="current-password">
-        </div>
-        <div class="auth-error" id="authError"></div>
-        <button type="submit" class="btn btn-primary btn-block" id="loginBtn">ورود</button>
-      </form>
-    </div>
-
-    <div class="auth-panel" data-auth-panel="signup">
-      <h3>📝 ثبت‌نام</h3>
-      <form onsubmit="handleSignup(event)">
-        <div class="form-group">
-          <label>اسم</label>
-          <input type="text" id="signupFirstName" placeholder="مثلاً: علی">
-        </div>
-        <div class="form-group">
-          <label>نام کاربری (انگلیسی)</label>
-          <input type="text" id="signupUsername" placeholder="ali_ahmadi" autocomplete="username">
-        </div>
-        <div class="form-group">
-          <label>پسورد</label>
-          <input type="password" id="signupPassword" placeholder="حداقل ۶ کاراکتر" autocomplete="new-password">
-        </div>
-        <div class="form-group">
-          <label>تکرار پسورد</label>
-          <input type="password" id="signupPassword2" placeholder="••••••" autocomplete="new-password">
-        </div>
-        <div class="auth-error" id="authError"></div>
-        <button type="submit" class="btn btn-primary btn-block" id="signupBtn">ثبت‌نام</button>
-      </form>
-    </div>
-
-    <div class="auth-footer">
-      <p>با حساب کاربری، داده‌ها توی ابر ذخیره می‌شن و از هر دستگاهی قابل دسترسن.</p>
-    </div>
-  </div>
-</div>
 <script src="supabase.js"></script>
 <script src="auth.js"></script>
 <script src="sync.js"></script>
 <script src="script.js"></script>
-
 </body>
 </html>
