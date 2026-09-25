@@ -1,6 +1,6 @@
 // ============================================================
 //  Authentication — لاگین، ثبت‌نام، خروج
-//  نسخه ۳.۵ کامل
+//  نسخه ۴.۰ — کامل و بی‌نقص
 // ============================================================
 
 function showAuthModal(mode = 'login') {
@@ -83,6 +83,7 @@ async function handleSignup(e) {
 
 async function handleLogout() {
   if (!confirm('از حساب خارج می‌شی؟')) return;
+  if (typeof stopAutoSync === 'function') stopAutoSync();
   await SupaClient.signOut();
   toast('خارج شدی.', 'info');
   updateAuthUI();
@@ -96,16 +97,22 @@ function onLoginSuccess() {
     if (confirm('داده‌های محلی داری. می‌خوای به حسابت منتقل بشن؟')) {
       syncToCloud(true).then(() => {
         toast('داده‌ها به ابر منتقل شدن.', 'success');
-        syncFromCloud();
+        syncFromCloud().then(() => {
+          if (typeof startAutoSync === 'function') startAutoSync();
+        });
       });
     } else {
       if (confirm('داده‌های محلی پاک بشن؟')) {
         clearLocalData();
-        syncFromCloud();
+        syncFromCloud().then(() => {
+          if (typeof startAutoSync === 'function') startAutoSync();
+        });
       }
     }
   } else {
-    syncFromCloud();
+    syncFromCloud().then(() => {
+      if (typeof startAutoSync === 'function') startAutoSync();
+    });
   }
   updateAuthUI();
 }
@@ -132,7 +139,6 @@ function updateAuthUI() {
     if (loggedIn) {
       const name = SupaClient.getFirstName() || 'کاربر';
       const username = SupaClient.getUsername() || '';
-      // همه جاهایی که .user-name هست
       userDropdown.querySelectorAll('.user-name').forEach(el => el.textContent = name);
       userDropdown.querySelectorAll('.user-username').forEach(el => el.textContent = '@' + username);
     }
@@ -146,10 +152,4 @@ function updateAuthUI() {
       aboutStatus.innerHTML = '⚠️ وارد نشدی. داده‌ها فقط روی همین دستگاه ذخیره می‌شن.';
     }
   }
-}
-
-function showUserMenu() {
-  const action = prompt('1 = خروج\n2 = بکاپ ابری\n3 = بستن', '3');
-  if (action === '1') handleLogout();
-  else if (action === '2') syncToCloud(true).then(() => toast('بکاپ ابری انجام شد.', 'success'));
 }
