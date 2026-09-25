@@ -113,27 +113,28 @@ function onLoginSuccess() {
 function updateAuthUI() {
   const loggedIn = SupaClient.isLoggedIn();
   const authBtn = document.getElementById('authBtn');
-  const userInfo = document.getElementById('userInfo');
+  const userDropdown = document.getElementById('userDropdown');
   const aboutBtn = document.getElementById('aboutAuthBtn');
   const aboutStatus = document.getElementById('aboutAccountStatus');
 
   if (authBtn) {
     if (loggedIn) {
-      authBtn.textContent = '👤 ' + (SupaClient.getFirstName() || 'حساب من');
-      authBtn.onclick = () => showUserMenu();
+      authBtn.style.display = 'none';
     } else {
+      authBtn.style.display = 'inline-flex';
       authBtn.textContent = '🔐 ورود';
       authBtn.onclick = () => showAuthModal('login');
     }
   }
 
-  if (userInfo) {
-    userInfo.style.display = loggedIn ? 'flex' : 'none';
+  if (userDropdown) {
+    userDropdown.style.display = loggedIn ? 'inline-block' : 'none';
     if (loggedIn) {
-      const n = userInfo.querySelector('.user-name');
-      const u = userInfo.querySelector('.user-username');
-      if (n) n.textContent = SupaClient.getFirstName() || '';
-      if (u) u.textContent = '@' + (SupaClient.getUsername() || '');
+      const name = SupaClient.getFirstName() || 'کاربر';
+      const username = SupaClient.getUsername() || '';
+      // همه جاهایی که .user-name هست
+      userDropdown.querySelectorAll('.user-name').forEach(el => el.textContent = name);
+      userDropdown.querySelectorAll('.user-username').forEach(el => el.textContent = '@' + username);
     }
   }
 
