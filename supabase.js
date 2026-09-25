@@ -1,20 +1,17 @@
 // ============================================================
 //  Supabase Configuration & Client
+//  نسخه ۳.۵ کامل
 // ============================================================
 
-// ⚠️ این مقادیر رو از Supabase بذار
 const SUPABASE_URL = 'https://sulllalgrahgbofirzpn.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_ZvqddFeoqhXoOximqIDWvA_HqUB6o6r';  // ← جایگزین کن
+const SUPABASE_ANON_KEY = 'sb_publishable_ZvqddFeoqhXoOximqIDWvA_HqUB6o6r';
 
-// ============================================================
-//  کلاینت سبک Supabase (بدون npm)
-// ============================================================
 const SupaClient = {
   url: SUPABASE_URL,
   key: SUPABASE_ANON_KEY,
   session: null,
 
-  // درخواست REST
+  // ---- درخواست REST ----
   async request(path, options = {}) {
     const headers = {
       'apikey': this.key,
@@ -37,19 +34,17 @@ const SupaClient = {
       throw new Error(err.message || err.error_description || 'خطای Supabase');
     }
     if (res.status === 204) return null;
-    return await res.json();
+    const text = await res.text();
+    if (!text) return null;
+    try { return JSON.parse(text); } catch(e) { return text; }
   },
 
   // ---- Auth ----
   async signUp(username, password, firstName) {
-    // نام کاربری → ایمیل ساختگی
     const email = username + '@school.app';
     const res = await fetch(this.url + '/auth/v1/signup', {
       method: 'POST',
-      headers: {
-        'apikey': this.key,
-        'Content-Type': 'application/json'
-      },
+      headers: { 'apikey': this.key, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         email: email,
         password: password,
@@ -57,7 +52,7 @@ const SupaClient = {
       })
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.message || data.error_description || 'خطا در ثبت‌نام');
+    if (!res.ok) throw new Error(data.message || data.error_description || data.msg || 'خطا در ثبت‌نام');
     if (data.access_token) {
       this.session = data;
       this.saveSession();
@@ -69,14 +64,11 @@ const SupaClient = {
     const email = username + '@school.app';
     const res = await fetch(this.url + '/auth/v1/token?grant_type=password', {
       method: 'POST',
-      headers: {
-        'apikey': this.key,
-        'Content-Type': 'application/json'
-      },
+      headers: { 'apikey': this.key, 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: email, password: password })
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error_description || data.message || 'نام کاربری یا پسورد اشتباه');
+    if (!res.ok) throw new Error(data.error_description || data.message || data.msg || 'نام کاربری یا پسورد اشتباه');
     this.session = data;
     this.saveSession();
     return data;
@@ -84,13 +76,10 @@ const SupaClient = {
 
   async signOut() {
     try {
-      if (this.session) {
+      if (this.session && this.session.access_token) {
         await fetch(this.url + '/auth/v1/logout', {
           method: 'POST',
-          headers: {
-            'apikey': this.key,
-            'Authorization': 'Bearer ' + this.session.access_token
-          }
+          headers: { 'apikey': this.key, 'Authorization': 'Bearer ' + this.session.access_token }
         });
       }
     } catch(e) {}
@@ -108,11 +97,12 @@ const SupaClient = {
     try {
       const s = localStorage.getItem('sb_session');
       if (s) {
-        this.session = JSON.parse(s);
-        // چک اعتبار
-        if (this.session.expires_at && Date.now() / 1000 > this.session.expires_at) {
+        const sess = JSON.parse(s);
+        if (sess.expires_at && Date.now() / 1000 > sess.expires_at) {
           this.session = null;
           localStorage.removeItem('sb_session');
+        } else {
+          this.session = sess;
         }
       }
     } catch(e) { this.session = null; }
@@ -124,10 +114,6 @@ const SupaClient = {
 
   getUserId() {
     return this.session && this.session.user ? this.session.user.id : null;
-  },
-
-  getUserEmail() {
-    return this.session && this.session.user ? this.session.user.email : null;
   },
 
   getUsername() {
