@@ -1,12 +1,14 @@
 // ============================================================
-//  مدیریت تکالیف مدرسه — نسخه ۳
+//  مدیریت تکالیف مدرسه — script.js
+//  نسخه ۳.۵ — با Supabase
 // ============================================================
 
 const K = {
   TASKS: 'sd_tasks', NOTE: 'sd_note', SCHEDULE: 'sd_schedule',
   THEME: 'sd_theme', ACTIVE_TAB: 'sd_active_tab', ACTIVE_GROUP: 'sd_active_group',
   TAGS: 'sd_tags', SETTINGS: 'sd_settings', EXPANDED: 'sd_expanded_tasks',
-  SUBJECT_NOTES: 'sd_subject_notes', DAILY_PREFIX: 'sd_daily_'
+  SUBJECT_NOTES: 'sd_subject_notes', DAILY_PREFIX: 'sd_daily_',
+  DAILY_DATE: 'sd_daily_date'
 };
 
 const WEEKDAYS = ['شنبه','یکشنبه','دوشنبه','سه‌شنبه','چهارشنبه','پنجشنبه','جمعه'];
@@ -27,6 +29,7 @@ const THEMES = [
 
 let tasks = [];
 let subjectNotes = {};
+let dailyPlans = {};
 let editingId = null;
 let currentSubtab = 'all';
 let currentCalYear = 0;
@@ -55,7 +58,7 @@ function gregorianToShamsi(gy, gm, gd) {
   if (days > 365) { jy += Math.floor((days-1)/365); days = (days-1)%365; }
   const jm = (days < 186) ? 1 + Math.floor(days/31) : 7 + Math.floor((days-186)/30);
   const jd = 1 + ((days < 186) ? (days%31) : ((days-186)%30));
-  return { year: jy, month: jm, day: jd };
+  return { y: jy, m: jm, d: jd };
 }
 
 function shamsiToGregorian(jy, jm, jd) {
@@ -70,21 +73,29 @@ function shamsiToGregorian(jy, jm, jd) {
   const sal_a = [0,31,(gy%4===0 && gy%100!==0)||(gy%400===0)?29:28,31,30,31,30,31,31,30,31,30,31];
   let gm;
   for (gm = 0; gm < 13 && gd > sal_a[gm]; gm++) gd -= sal_a[gm];
-  return { year: gy, month: gm, day: gd };
+  return { y: gy, m: gm, d: gd };
 }
 
-function todayShamsi() { const d = new Date(); return gregorianToShamsi(d.getFullYear(), d.getMonth()+1, d.getDate()); }
+function todayShamsi() {
+  const d = new Date();
+  return gregorianToShamsi(d.getFullYear(), d.getMonth()+1, d.getDate());
+}
+
 function shamsiComparable(y, m, d) { return y*10000 + m*100 + d; }
 function formatShamsi(y, m, d) { return `${y}/${String(m).padStart(2,'0')}/${String(d).padStart(2,'0')}`; }
+
 function formatShamsiFull(y, m, d) {
   const months = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
   return `${d} ${months[m-1]} ${y}`;
 }
+
 function dailyKey(y, m, d) { return K.DAILY_PREFIX + `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
 
 function isLeapShamsi(y) {
-  try { const g = shamsiToGregorian(y, 12, 30); return g.month === 12 && g.day === 30; }
-  catch(e) { return false; }
+  try {
+    const g = shamsiToGregorian(y, 12, 30);
+    return g.m === 12 && g.d === 30;
+  } catch(e) { return false; }
 }
 
 function isValidShamsi(y, m, d) {
@@ -94,7 +105,7 @@ function isValidShamsi(y, m, d) {
   if (d < 1 || d > 31) return false;
   if (m <= 6 && d > 31) return false;
   if (m >= 7 && m <= 11 && d > 30) return false;
-  if (m === 12) { const maxDay = isLeapShamsi(y) ? 30 : 29; if (d > maxDay) return false; }
+  if (m === 12 && d > (isLeapShamsi(y) ? 30 : 29)) return false;
   return true;
 }
 
@@ -102,7 +113,7 @@ function getWeekdayFromShamsi(y, m, d) {
   if (!isValidShamsi(y, m, d)) return '—';
   try {
     const g = shamsiToGregorian(y, m, d);
-    const date = new Date(g.year, g.month-1, g.day);
+    const date = new Date(g.y, g.m-1, g.d);
     const map = { 6:0, 0:1, 1:2, 2:3, 3:4, 4:5, 5:6 };
     return WEEKDAYS[map[date.getDay()]];
   } catch(e) { return '—'; }
@@ -112,15 +123,15 @@ function daysBetween(y1,m1,d1,y2,m2,d2) {
   try {
     const g1 = shamsiToGregorian(y1,m1,d1);
     const g2 = shamsiToGregorian(y2,m2,d2);
-    const date1 = new Date(g1.year, g1.month-1, g1.day);
-    const date2 = new Date(g2.year, g2.month-1, g2.day);
+    const date1 = new Date(g1.y, g1.m-1, g1.d);
+    const date2 = new Date(g2.y, g2.m-1, g2.d);
     return Math.round((date2 - date1) / (1000*60*60*24));
   } catch(e) { return 0; }
 }
 
 function addDaysToShamsi(y, m, d, days) {
   const g = shamsiToGregorian(y, m, d);
-  const date = new Date(g.year, g.month-1, g.day);
+  const date = new Date(g.y, g.m-1, g.d);
   date.setDate(date.getDate() + days);
   return gregorianToShamsi(date.getFullYear(), date.getMonth()+1, date.getDate());
 }
@@ -141,31 +152,43 @@ function loadTasks() {
 function saveTasks() {
   const s = loadSettings();
   if (s.autoSave === false) return;
-  try { localStorage.setItem(K.TASKS, JSON.stringify(tasks)); showSaveStatus('saved'); }
-  catch(e) { showSaveStatus('error'); }
-  if (SupaClient.isLoggedIn()) {
-  syncToCloud().catch(() => {});
+  try {
+    localStorage.setItem(K.TASKS, JSON.stringify(tasks));
+    showSaveStatus('saved');
+    if (typeof SupaClient !== 'undefined' && SupaClient.isLoggedIn()) {
+      syncToCloud().catch(() => {});
+    }
+  } catch(e) { showSaveStatus('error'); }
 }
-}
-
 
 function forceSaveTasks() {
-  try { localStorage.setItem(K.TASKS, JSON.stringify(tasks)); showSaveStatus('saved'); return true; }
-  catch(e) { showSaveStatus('error'); return false; }
+  try {
+    localStorage.setItem(K.TASKS, JSON.stringify(tasks));
+    showSaveStatus('saved');
+    return true;
+  } catch(e) { showSaveStatus('error'); return false; }
 }
 
 function loadNote() { return localStorage.getItem(K.NOTE) || ''; }
 function saveNote(t) { localStorage.setItem(K.NOTE, t); }
 
-function loadTags() { try { allTags = JSON.parse(localStorage.getItem(K.TAGS)) || []; } catch(e) { allTags = []; } }
+function loadTags() {
+  try { allTags = JSON.parse(localStorage.getItem(K.TAGS)) || []; }
+  catch(e) { allTags = []; }
+}
 function saveTags() { localStorage.setItem(K.TAGS, JSON.stringify(allTags)); }
 
-function loadSettings() { try { return JSON.parse(localStorage.getItem(K.SETTINGS)) || {}; } catch(e) { return {}; } }
+function loadSettings() {
+  try { return JSON.parse(localStorage.getItem(K.SETTINGS)) || {}; }
+  catch(e) { return {}; }
+}
 function saveSettings(s) { localStorage.setItem(K.SETTINGS, JSON.stringify(s)); }
 
 function loadExpanded() {
-  try { const arr = JSON.parse(localStorage.getItem(K.EXPANDED)) || []; expandedTasks = new Set(arr); }
-  catch(e) { expandedTasks = new Set(); }
+  try {
+    const arr = JSON.parse(localStorage.getItem(K.EXPANDED)) || [];
+    expandedTasks = new Set(arr);
+  } catch(e) { expandedTasks = new Set(); }
 }
 function saveExpanded() { localStorage.setItem(K.EXPANDED, JSON.stringify([...expandedTasks])); }
 
@@ -175,15 +198,12 @@ function loadSubjectNotes() {
 }
 function saveSubjectNotes() { localStorage.setItem(K.SUBJECT_NOTES, JSON.stringify(subjectNotes)); }
 
-function loadDailyPlan(y, m, d) {
-  const key = dailyKey(y, m, d);
-  try { return JSON.parse(localStorage.getItem(key)) || []; }
-  catch(e) { return []; }
+function loadDailyPlans() {
+  try { dailyPlans = JSON.parse(localStorage.getItem(K.DAILY_PREFIX + 'all')) || {}; }
+  catch(e) { dailyPlans = {}; }
+  if (typeof dailyPlans !== 'object' || Array.isArray(dailyPlans)) dailyPlans = {};
 }
-function saveDailyPlan(y, m, d, items) {
-  const key = dailyKey(y, m, d);
-  localStorage.setItem(key, JSON.stringify(items));
-}
+function saveDailyPlans() { localStorage.setItem(K.DAILY_PREFIX + 'all', JSON.stringify(dailyPlans)); }
 
 function defaultSchedule() {
   const periods = [];
@@ -230,23 +250,21 @@ function showSaveStatus(type) {
 function isOverdue(t) {
   if (t.done) return false;
   const today = todayShamsi();
-  return shamsiComparable(t.year, t.month, t.day) < shamsiComparable(today.year, today.month, today.day);
+  return shamsiComparable(t.year, t.month, t.day) < shamsiComparable(today.y, today.m, today.d);
 }
 function isToday(t) {
   const today = todayShamsi();
-  return t.year === today.year && t.month === today.month && t.day === today.day;
+  return t.year === today.y && t.month === today.m && t.day === today.d;
 }
 function isTomorrow(t) {
-  const g = shamsiToGregorian(todayShamsi().year, todayShamsi().month, todayShamsi().day);
-  const d = new Date(g.year, g.month-1, g.day);
-  d.setDate(d.getDate()+1);
-  const tom = gregorianToShamsi(d.getFullYear(), d.getMonth()+1, d.getDate());
-  return t.year === tom.year && t.month === tom.month && t.day === tom.day;
+  const today = todayShamsi();
+  const tom = addDaysToShamsi(today.y, today.m, today.d, 1);
+  return t.year === tom.y && t.month === tom.m && t.day === tom.d;
 }
 function isThisWeek(t) {
   const today = todayShamsi();
-  const g = shamsiToGregorian(today.year, today.month, today.day);
-  const d = new Date(g.year, g.month-1, g.day);
+  const g = shamsiToGregorian(today.y, today.m, today.d);
+  const d = new Date(g.y, g.m-1, g.d);
   const dow = d.getDay();
   let diff;
   if (dow === 6) diff = 0; else if (dow === 0) diff = 1; else if (dow === 1) diff = 2;
@@ -256,15 +274,16 @@ function isThisWeek(t) {
   const satS = gregorianToShamsi(sat.getFullYear(), sat.getMonth()+1, sat.getDate());
   const friS = gregorianToShamsi(fri.getFullYear(), fri.getMonth()+1, fri.getDate());
   const tc = shamsiComparable(t.year, t.month, t.day);
-  return tc >= shamsiComparable(satS.year, satS.month, satS.day) && tc <= shamsiComparable(friS.year, friS.month, friS.day);
+  return tc >= shamsiComparable(satS.y, satS.m, satS.d) && tc <= shamsiComparable(friS.y, friS.m, friS.d);
 }
 function isThisMonth(t) {
   const today = todayShamsi();
-  return t.year === today.year && t.month === today.month;
+  return t.year === today.y && t.month === today.m;
 }
 function isOldDone(t) {
   if (!t.done) return false;
-  return daysBetween(t.year, t.month, t.day, todayShamsi().year, todayShamsi().month, todayShamsi().day) > 30;
+  const today = todayShamsi();
+  return daysBetween(t.year, t.month, t.day, today.y, today.m, today.d) > 30;
 }
 
 function esc(s) {
@@ -404,7 +423,7 @@ function getSubjectTimes(subject, day) {
 }
 
 // ============================================================
-//  آمار
+//  رندرها
 // ============================================================
 function renderStatCards() {
   const total = tasks.length;
@@ -440,9 +459,6 @@ function renderAlerts() {
   if (ab) ab.innerHTML = html;
 }
 
-// ============================================================
-//  زیرکارها
-// ============================================================
 function renderSubtasksInline(t) {
   const subs = t.subtasks || [];
   if (!subs.length) {
@@ -475,9 +491,6 @@ function renderSubtasksInline(t) {
   `;
 }
 
-// ============================================================
-//  کارت کار
-// ============================================================
 function renderTaskCard(t, compact = false) {
   const overdue = isOverdue(t);
   const cls = `${t.done?'done':''} ${overdue?'overdue':''}`;
@@ -605,9 +618,6 @@ function renderTaskDetails(t) {
   `;
 }
 
-// ============================================================
-//  صفحه درس
-// ============================================================
 function renderSubjectPage(subject) {
   currentSubjectPage = subject;
   const notes = subjectNotes[subject] || [];
@@ -963,9 +973,6 @@ function handleSubmit(e) {
   populateSubjectFilter();
   renderAll();
   closeSidePanel();
-  if (SupaClient.isLoggedIn()) {
-  syncToCloud().catch(() => {});
-}
   resetForm();
 }
 
@@ -982,6 +989,7 @@ function renderAll() {
   renderCalendar();
   refreshCalendarDay();
   renderSchedule();
+  renderDailyPlans();
   renderStatsTables();
   renderTimeStats();
   renderBadges();
@@ -1008,8 +1016,10 @@ function renderProgress() {
   const mDone = monthTasks.filter(t=>t.done).length;
   const wP = weekTasks.length ? Math.round((wDone/weekTasks.length)*100) : 0;
   const mP = monthTasks.length ? Math.round((mDone/monthTasks.length)*100) : 0;
-  const pw = document.getElementById('progressWeek'); const pwt = document.getElementById('progressWeekText');
-  const pm = document.getElementById('progressMonth'); const pmt = document.getElementById('progressMonthText');
+  const pw = document.getElementById('progressWeek');
+  const pwt = document.getElementById('progressWeekText');
+  const pm = document.getElementById('progressMonth');
+  const pmt = document.getElementById('progressMonthText');
   if (pw) pw.style.width = wP+'%';
   if (pwt) pwt.textContent = wP+'%';
   if (pm) pm.style.width = mP+'%';
@@ -1033,8 +1043,8 @@ function renderBadges() {
 
 function renderWeeklyChart() {
   const today = todayShamsi();
-  const g = shamsiToGregorian(today.year, today.month, today.day);
-  const d = new Date(g.year, g.month-1, g.day);
+  const g = shamsiToGregorian(today.y, today.m, today.d);
+  const d = new Date(g.y, g.m-1, g.d);
   const dow = d.getDay();
   let diff;
   if (dow === 6) diff = 0; else if (dow === 0) diff = 1; else if (dow === 1) diff = 2;
@@ -1044,10 +1054,12 @@ function renderWeeklyChart() {
   for (let i=0; i<7; i++) {
     const day = new Date(sat); day.setDate(sat.getDate()+i);
     const sh = gregorianToShamsi(day.getFullYear(), day.getMonth()+1, day.getDate());
-    const c = tasks.filter(t=>t.done && t.year===sh.year && t.month===sh.month && t.day===sh.day).length;
-    counts.push(c); if (c > max) max = c;
+    const c = tasks.filter(t=>t.done && t.year===sh.y && t.month===sh.m && t.day===sh.d).length;
+    counts.push(c);
+    if (c > max) max = c;
   }
-  const html = counts.map((c,i)=>{ const h = (c/max)*100;
+  const html = counts.map((c,i)=>{
+    const h = (c/max)*100;
     return `<div class="chart-bar-wrap"><div class="chart-value">${c}</div><div class="chart-bar" style="height:${h}%"></div><div class="chart-label">${WEEKDAYS[i]}</div></div>`;
   }).join('');
   const wc = document.getElementById('weeklyChart');
@@ -1063,12 +1075,15 @@ function renderOverview() {
     const overdue = arr.filter(isOverdue).length;
     return `<div class="ov-num"><strong>${arr.length}</strong><span>کل</span></div><div class="ov-num"><strong>${done}</strong><span>انجام‌شده</span></div><div class="ov-num"><strong>${undone}</strong><span>انجام‌نشده</span></div><div class="ov-num"><strong>${overdue}</strong><span>عقب‌افتاده</span></div>`;
   };
-  const tn = document.getElementById('ovTodayNumbers'); const wn = document.getElementById('ovWeekNumbers'); const an = document.getElementById('ovAllNumbers');
+  const tn = document.getElementById('ovTodayNumbers');
+  const wn = document.getElementById('ovWeekNumbers');
+  const an = document.getElementById('ovAllNumbers');
   if (tn) tn.innerHTML = renderNums(todayTasks);
   if (wn) wn.innerHTML = renderNums(weekTasks);
   if (an) an.innerHTML = renderNums(tasks);
   const listHtml = (arr, n) => arr.length ? arr.slice(0,n).map(t=>`<div class="ov-item">${esc(t.title)} — ${esc(t.subject)}</div>`).join('') : '<div class="empty-msg">موردی نیست.</div>';
-  const tl = document.getElementById('ovTodayList'); const wl = document.getElementById('ovWeekList');
+  const tl = document.getElementById('ovTodayList');
+  const wl = document.getElementById('ovWeekList');
   if (tl) tl.innerHTML = listHtml(todayTasks,5);
   if (wl) wl.innerHTML = listHtml(weekTasks,5);
   const done = tasks.filter(t=>t.done).length;
@@ -1081,14 +1096,21 @@ function renderSubjects() {
   const ss = document.getElementById('subjectSearch');
   if (!ss) return;
   const search = (ss.value||'').toLowerCase();
-  const allSubjects = getAllScheduleSubjects();
   const subs = {};
-  allSubjects.forEach(s => { subs[s] = { total:0, done:0, overdue:0 }; });
+  // از tasks
   tasks.forEach(t=>{
     if (!subs[t.subject]) subs[t.subject] = { total:0, done:0, overdue:0 };
     subs[t.subject].total++;
     if (t.done) subs[t.subject].done++;
     if (isOverdue(t)) subs[t.subject].overdue++;
+  });
+  // از subjectNotes
+  Object.keys(subjectNotes).forEach(s => {
+    if (!subs[s]) subs[s] = { total:0, done:0, overdue:0 };
+  });
+  // از برنامه هفتگی
+  getAllScheduleSubjects().forEach(s => {
+    if (!subs[s]) subs[s] = { total:0, done:0, overdue:0 };
   });
   const keys = Object.keys(subs).filter(s=>!search || s.toLowerCase().includes(search)).sort();
   const sc = document.getElementById('subjectCards');
@@ -1098,20 +1120,17 @@ function renderSubjects() {
     const p = d.total ? Math.round((d.done/d.total)*100) : 0;
     const notesCount = (subjectNotes[s] || []).length;
     return `<div class="subject-card" data-subject="${esc(s)}"><h4>📚 ${esc(s)}</h4><div class="subj-stats"><span>کل: ${d.total}</span><span>انجام: ${d.done}</span><span>عقب: ${d.overdue}</span><span>یادداشت: ${notesCount}</span></div><div class="subj-bar"><div class="subj-fill" style="width:${p}%"></div></div></div>`;
-  }).join('') : '<div class="empty-msg">درسی یافت نشد. ابتدا در برنامه هفتگی درس وارد کن.</div>';
+  }).join('') : '<div class="empty-msg">درسی یافت نشد.</div>';
 }
 
-// ============================================================
-//  تقویم
-// ============================================================
 function renderCalendar() {
   const today = todayShamsi();
-  if (!currentCalYear) { currentCalYear = today.year; currentCalMonth = today.month; }
+  if (!currentCalYear) { currentCalYear = today.y; currentCalMonth = today.m; }
   const monthNames = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
   const ct = document.getElementById('calTitle');
   if (ct) ct.textContent = `${monthNames[currentCalMonth-1]} ${currentCalYear}`;
   const firstG = shamsiToGregorian(currentCalYear, currentCalMonth, 1);
-  const firstDate = new Date(firstG.year, firstG.month-1, firstG.day);
+  const firstDate = new Date(firstG.y, firstG.m-1, firstG.d);
   const firstDow = firstDate.getDay();
   let offset;
   if (firstDow === 6) offset = 0; else if (firstDow === 0) offset = 1; else if (firstDow === 1) offset = 2;
@@ -1120,9 +1139,10 @@ function renderCalendar() {
   let html = WEEKDAYS.map(d=>`<div class="cal-head">${d}</div>`).join('');
   for (let i=0; i<offset; i++) html += '<div class="cal-cell empty"></div>';
   for (let d=1; d<=daysInMonth; d++) {
-    const isTodayCell = (currentCalYear===today.year && currentCalMonth===today.month && d===today.day);
+    const isTodayCell = (currentCalYear===today.y && currentCalMonth===today.m && d===today.d);
     const dayTasks = tasks.filter(t=>t.year===currentCalYear && t.month===currentCalMonth && t.day===d);
-    let statusCls = ''; let dots = '';
+    let statusCls = '';
+    let dots = '';
     if (dayTasks.length) {
       const anyOverdue = dayTasks.some(isOverdue);
       const anyUndone = dayTasks.some(t=>!t.done && !isOverdue(t));
@@ -1161,9 +1181,6 @@ function refreshCalendarDay() {
   }
 }
 
-// ============================================================
-//  برنامه هفتگی
-// ============================================================
 function renderSchedule() {
   const s = loadSchedule();
   const tbody = document.getElementById('scheduleBody');
@@ -1191,7 +1208,7 @@ function renderSchedule() {
         const dueWd = getWeekdayFromShamsi(t.year, t.month, t.day);
         const isDeliverCell = t.workType === 'حضوری' && t.deliverDay === dayName && t.deliverTime === s.periods[p].startTime;
         const deliverMark = isDeliverCell ? '<span class="schedule-task-deliver">📌</span>' : '';
-        return `<div class="schedule-task ${tCls}" data-act="open" data-task-id="${t.id}"><span class="schedule-task-title">${deliverMark} ${esc(t.title)}</span><div class="schedule-task-meta">${typeChip}</div><div class="schedule-task-due">موعد: ${dueWd} ${formatShamsi(t.year,t.month,t.day)}</div></div>`;
+        return `<div class="schedule-task ${tCls}" data-act="open" data-task-id="${t.id}"><span class="schedule-task-title">${deliverMark} ${esc(t.title)}</span><div class="schedule-task-meta">${typeChip}<span class="badge badge-pri-${esc(t.priority)}" style="font-size:0.55rem;padding:0.05rem 0.35rem">${esc(t.priority)}</span></div><div class="schedule-task-due">موعد: ${dueWd} ${formatShamsi(t.year,t.month,t.day)}</div></div>`;
       }).join('');
       html += `<td><div class="schedule-cell"><input type="text" class="schedule-subject-input" data-p="${p}" data-d="${d}" value="${esc(subject)}" placeholder="—">${cellTasks.length ? `<div class="schedule-tasks">${tasksHtml}</div>` : ''}${subject ? `<div class="schedule-cell-info" data-subject="${esc(subject)}">مشاهده کارهای ${esc(subject)}</div>` : ''}</div></td>`;
     }
@@ -1204,6 +1221,7 @@ function renderSchedule() {
       const p = parseInt(inp.dataset.p); const d = parseInt(inp.dataset.d);
       s2.periods[p].days[d].subject = inp.value;
       saveSchedule(s2); renderSchedule(); populateSubjectFilter(); renderSubjects();
+      if (typeof SupaClient !== 'undefined' && SupaClient.isLoggedIn()) syncToCloud().catch(()=>{});
     });
   });
   tbody.querySelectorAll('.period-time-input').forEach(inp=>{
@@ -1211,13 +1229,44 @@ function renderSchedule() {
       const s2 = loadSchedule();
       const p = parseInt(inp.dataset.p); const field = inp.dataset.field;
       s2.periods[p][field] = inp.value; saveSchedule(s2);
+      if (typeof SupaClient !== 'undefined' && SupaClient.isLoggedIn()) syncToCloud().catch(()=>{});
     });
   });
 }
 
-// ============================================================
-//  آمار
-// ============================================================
+function renderDailyPlans() {
+  const container = document.getElementById('dailyList');
+  if (!container) return;
+  const t = todayShamsi();
+  if (!currentDailyDate) currentDailyDate = { y: t.y, m: t.m, d: t.d };
+  const { y, m, d } = currentDailyDate;
+  const titleEl = document.getElementById('dailyDateTitle');
+  const weekdayEl = document.getElementById('dailyDateWeekday');
+  if (titleEl) titleEl.textContent = formatShamsiFull(y, m, d);
+  if (weekdayEl) weekdayEl.textContent = getWeekdayFromShamsi(y, m, d);
+  const key = dailyKey(y, m, d);
+  const items = dailyPlans[key] || [];
+  if (!items.length) {
+    container.innerHTML = '<div class="daily-empty">هنوز برنامه‌ای برای این روز ثبت نشده.<br>روی «افزودن برنامه» کلیک کن.</div>';
+    return;
+  }
+  container.innerHTML = items.map((item, idx) => `
+    <div class="daily-item ${item.done ? 'done' : ''}">
+      <div class="daily-item-check ${item.done ? 'checked' : ''}" data-daily-toggle="${idx}">${item.done ? '✓' : ''}</div>
+      <div class="daily-item-content">
+        <div class="daily-item-title">${esc(item.title)}</div>
+        ${item.duration ? `<div class="daily-item-duration">⏱️ ${esc(item.duration)}</div>` : ''}
+      </div>
+      <div class="daily-item-actions">
+        <button class="move-up" data-daily-up="${idx}" title="بالا">⬆️</button>
+        <button class="move-down" data-daily-down="${idx}" title="پایین">⬇️</button>
+        <button data-daily-edit="${idx}" title="ویرایش">✏️</button>
+        <button class="delete" data-daily-delete="${idx}" title="حذف">🗑️</button>
+      </div>
+    </div>
+  `).join('');
+}
+
 function renderStatsTables() {
   const subs = {};
   tasks.forEach(t=>{
@@ -1285,75 +1334,6 @@ function renderTimeStats() {
   </div>`;
 }
 
-function calcRangeStats() {
-  const yF = parseInt(document.getElementById('sYearFrom').value);
-  const mF = parseInt(document.getElementById('sMonthFrom').value);
-  const dF = parseInt(document.getElementById('sDayFrom').value);
-  const yT = parseInt(document.getElementById('sYearTo').value);
-  const mT = parseInt(document.getElementById('sMonthTo').value);
-  const dT = parseInt(document.getElementById('sDayTo').value);
-  const rr = document.getElementById('rangeResult');
-  if (!rr) return;
-  if (!isValidShamsi(yF,mF,dF) || !isValidShamsi(yT,mT,dT)) { rr.innerHTML = '<div class="empty-msg">تاریخ معتبر نیست.</div>'; return; }
-  const from = shamsiComparable(yF,mF,dF); const to = shamsiComparable(yT,mT,dT);
-  if (from > to) { rr.innerHTML = '<div class="empty-msg">تاریخ شروع بعد از پایان است.</div>'; return; }
-  const arr = tasks.filter(t=>{ const c = shamsiComparable(t.year,t.month,t.day); return c>=from && c<=to; });
-  const done = arr.filter(t=>t.done).length;
-  const undone = arr.length - done;
-  const overdue = arr.filter(isOverdue).length;
-  rr.innerHTML = `<div class="stat-cards"><div class="stat-card"><div class="stat-icon">📋</div><div class="stat-info"><span class="stat-num">${arr.length}</span><span class="stat-lbl">کل</span></div></div><div class="stat-card"><div class="stat-icon">✅</div><div class="stat-info"><span class="stat-num">${done}</span><span class="stat-lbl">انجام‌شده</span></div></div><div class="stat-card"><div class="stat-icon">⏳</div><div class="stat-info"><span class="stat-num">${undone}</span><span class="stat-lbl">انجام‌نشده</span></div></div><div class="stat-card"><div class="stat-icon">⚠️</div><div class="stat-info"><span class="stat-num">${overdue}</span><span class="stat-lbl">عقب‌افتاده</span></div></div></div>`;
-}
-
-// ============================================================
-//  برنامه روزانه
-// ============================================================
-function initDailyDate() {
-  if (!currentDailyDate) {
-    const t = todayShamsi();
-    currentDailyDate = { year: t.year, month: t.month, day: t.day };
-  }
-}
-
-function renderDailyPlan() {
-  initDailyDate();
-  const { year, month, day } = currentDailyDate;
-  const weekday = getWeekdayFromShamsi(year, month, day);
-  const titleEl = document.getElementById('dailyDateTitle');
-  const weekdayEl = document.getElementById('dailyDateWeekday');
-  const listEl = document.getElementById('dailyList');
-  if (titleEl) titleEl.textContent = formatShamsiFull(year, month, day);
-  if (weekdayEl) weekdayEl.textContent = weekday;
-  const items = loadDailyPlan(year, month, day);
-  if (!listEl) return;
-  if (!items.length) {
-    listEl.innerHTML = '<div class="daily-empty">هنوز برنامه‌ای برای این روز ثبت نشده.<br>روی «افزودن برنامه» کلیک کن.</div>';
-    return;
-  }
-  listEl.innerHTML = items.map((item, idx) => `
-    <div class="daily-item ${item.done ? 'done' : ''}">
-      <div class="daily-item-check ${item.done ? 'checked' : ''}" data-daily-toggle="${idx}">${item.done ? '✓' : ''}</div>
-      <div class="daily-item-content">
-        <div class="daily-item-title">${esc(item.title)}</div>
-        ${item.duration ? `<div class="daily-item-duration">⏱️ ${esc(item.duration)}</div>` : ''}
-      </div>
-      <div class="daily-item-actions">
-        <button class="move-up" data-daily-up="${idx}" title="بالا">⬆️</button>
-        <button class="move-down" data-daily-down="${idx}" title="پایین">⬇️</button>
-        <button data-daily-edit="${idx}" title="ویرایش">✏️</button>
-        <button class="delete" data-daily-delete="${idx}" title="حذف">🗑️</button>
-      </div>
-    </div>
-  `).join('');
-}
-
-function addDailyItem(title, duration) {
-  const { year, month, day } = currentDailyDate;
-  const items = loadDailyPlan(year, month, day);
-  items.push({ id: Date.now().toString(36), title, duration, done: false });
-  saveDailyPlan(year, month, day, items);
-  renderDailyPlan();
-}
-
 // ============================================================
 //  ناوبری
 // ============================================================
@@ -1379,7 +1359,7 @@ function switchTab(name) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
   document.querySelectorAll('.sub-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   localStorage.setItem(K.ACTIVE_TAB, name);
-  if (name === 'daily') renderDailyPlan();
+  if (name === 'daily') renderDailyPlans();
 }
 
 // ============================================================
@@ -1398,7 +1378,7 @@ function closeSidePanel() { document.getElementById('sidePanelOverlay').classLis
 function exportTxt() {
   const t0 = todayShamsi();
   let c = '===== مدیریت تکالیف مدرسه =====\n';
-  c += `تاریخ: ${formatShamsi(t0.year, t0.month, t0.day)}\n\n`;
+  c += `تاریخ: ${formatShamsi(t0.y, t0.m, t0.d)}\n\n`;
   c += `--- آمار کلی ---\nکل: ${tasks.length}\n`;
   ['تکلیف','امتحان','پروژه','یادآوری'].forEach(ty=>{ c += `${ty}: ${tasks.filter(t=>t.type===ty).length}\n`; });
   c += `انجام‌شده: ${tasks.filter(t=>t.done).length}\nعقب‌افتاده: ${tasks.filter(isOverdue).length}\n\n--- لیست کارها ---\n`;
@@ -1421,14 +1401,14 @@ function exportTxt() {
     WEEKDAYS_6.forEach((w,i)=>{ c += `${w}: ${(s.periods[p].days[i].subject)||'—'}  `; });
     c += '\n';
   }
-  downloadFile(c, `takalif_${formatShamsi(t0.year,t0.month,t0.day).replace(/\//g,'-')}.txt`, 'text/plain');
+  downloadFile(c, `takalif_${formatShamsi(t0.y,t0.m,t0.d).replace(/\//g,'-')}.txt`, 'text/plain');
   toast('خروجی TXT دانلود شد.', 'success');
 }
 
 function exportPdf() { window.print(); }
 
 function backupJson() {
-  const data = { tasks, note: loadNote(), schedule: loadSchedule(), tags: allTags, subjectNotes, exportedAt: new Date().toISOString() };
+  const data = { tasks, note: loadNote(), schedule: loadSchedule(), tags: allTags, subjectNotes, dailyPlans, exportedAt: new Date().toISOString() };
   downloadFile(JSON.stringify(data,null,2), `backup_${Date.now()}.json`, 'application/json');
   toast('بکاپ JSON دانلود شد.', 'success');
 }
@@ -1443,9 +1423,11 @@ function restoreJson(file) {
       if (d.schedule) saveSchedule(d.schedule);
       if (Array.isArray(d.tags)) { allTags = d.tags; saveTags(); }
       if (d.subjectNotes) { subjectNotes = d.subjectNotes; saveSubjectNotes(); }
+      if (d.dailyPlans) { dailyPlans = d.dailyPlans; saveDailyPlans(); }
       populateSubjectFilter();
       renderAll();
       toast('بازیابی انجام شد.', 'success');
+      if (typeof SupaClient !== 'undefined' && SupaClient.isLoggedIn()) syncToCloud().catch(()=>{});
     } catch(err) { toast('فایل نامعتبر است.', 'error'); }
   };
   r.readAsText(file);
@@ -1488,19 +1470,46 @@ function updateStorageInfo() {
   if (el) el.textContent = `فضای مصرفی localStorage: ${kb} کیلوبایت`;
 }
 
-function clearAll() {
+async function clearAll() {
   if (!confirm('همه داده‌ها پاک می‌شوند. مطمئنی؟')) return;
   if (!confirm('آخرین تأیید: واقعاً پاک کنم؟')) return;
+  const loggedIn = typeof SupaClient !== 'undefined' && SupaClient.isLoggedIn();
+  if (loggedIn) {
+    if (!confirm('⚠️ تو لاگین هستی. می‌خوای داده‌های ابری هم پاک بشن؟')) {
+      // فقط localStorage
+      clearLocalStorageOnly();
+      renderAll();
+      toast('فقط داده‌های محلی پاک شد.', 'info');
+      return;
+    }
+    // پاک کردن ابر
+    try {
+      const uid = SupaClient.getUserId();
+      await SupaClient.delete('tasks', `user_id=eq.${uid}`);
+      await SupaClient.delete('schedule', `user_id=eq.${uid}`);
+      await SupaClient.delete('subject_notes', `user_id=eq.${uid}`);
+      await SupaClient.delete('daily_plans', `user_id=eq.${uid}`);
+      clearLocalStorageOnly();
+      renderAll();
+      toast('همه داده‌ها (ابری + محلی) پاک شد.', 'success');
+    } catch(e) {
+      toast('خطا در پاک کردن ابر: ' + e.message, 'error');
+    }
+  } else {
+    clearLocalStorageOnly();
+    renderAll();
+    toast('همه داده‌ها پاک شد.', 'success');
+  }
+}
+
+function clearLocalStorageOnly() {
   const keysToRemove = [];
   for (const k in localStorage) { if (k.startsWith('sd_')) keysToRemove.push(k); }
   keysToRemove.forEach(k => localStorage.removeItem(k));
-  tasks = []; allTags = []; expandedTasks = new Set(); subjectNotes = {};
+  tasks = []; allTags = []; expandedTasks = new Set(); subjectNotes = {}; dailyPlans = {};
   const n = document.getElementById('personalNote');
   if (n) n.value = '';
-  renderAll();
-  toast('همه داده‌ها پاک شد.', 'success');
 }
-
 function applySettings() {
   const s = loadSettings();
   const fontClasses = ['font-large','font-small'].filter(c => document.body.classList.contains(c));
@@ -1560,19 +1569,52 @@ function openTaskModal(t) {
 }
 
 // ============================================================
+//  اتصال به بات
+// ============================================================
+async function generateLinkCode() {
+  if (!SupaClient.isLoggedIn()) {
+    toast('اول وارد شو.', 'warn');
+    showAuthModal('login');
+    return;
+  }
+  const uid = SupaClient.getUserId();
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  try {
+    await SupaClient.delete('link_codes', `user_id=eq.${uid}&used=eq.false`);
+    await SupaClient.insert('link_codes', { code: code, user_id: uid, used: false });
+    const modal = document.getElementById('linkModal');
+    const body = document.getElementById('linkModalBody');
+    body.innerHTML = `
+      <div class="link-code-box">
+        <p>🔗 کد اتصال شما:</p>
+        <div class="link-code">${code}</div>
+        <p class="link-hint">این کد رو توی بات بله بفرست:</p>
+        <div class="link-command">${code}</div>
+        <p class="link-hint">یا</p>
+        <div class="link-command">/link ${code}</div>
+        <p class="link-warning">⏱️ کد ۵ دقیقه اعتبار داره.</p>
+      </div>
+    `;
+    modal.classList.add('show');
+  } catch(e) {
+    toast('خطا در تولید کد: ' + e.message, 'error');
+  }
+}
+
+// ============================================================
 //  میانبرها
 // ============================================================
 function setupShortcuts() {
-  document.addEventListener('keydown', function(e) {
+  window.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
-      const mo = document.getElementById('modalOverlay');
-      if (mo) mo.classList.remove('show');
+      document.getElementById('modalOverlay').classList.remove('show');
+      document.getElementById('linkModal').classList.remove('show');
       closeSidePanel();
       return;
     }
     if (!e.altKey || !e.shiftKey) return;
     if (e.ctrlKey || e.metaKey) return;
-    if (e.code === 'KeyA' || e.key === 'A' || e.key === 'a') { e.preventDefault(); resetForm(); openSidePanel(); setTimeout(function(){ const el = document.getElementById('fTitle'); if (el) el.focus(); }, 300); return; }
+    if (e.code === 'KeyA' || e.key === 'A' || e.key === 'a') { e.preventDefault(); resetForm(); openSidePanel(); setTimeout(()=>document.getElementById('fTitle').focus(), 300); return; }
     if (e.code === 'KeyQ' || e.key === 'Q' || e.key === 'q') { e.preventDefault(); switchGroup('home'); return; }
     if (e.code === 'KeyW' || e.key === 'W' || e.key === 'w') { e.preventDefault(); switchGroup('tasks'); return; }
     if (e.code === 'KeyR' || e.key === 'R' || e.key === 'r') { e.preventDefault(); switchGroup('schedule'); return; }
@@ -1595,9 +1637,9 @@ function fillRangeInputs(yF,mF,dF,yT,mT,dT) {
 
 function quickRange(type) {
   const today = todayShamsi();
-  const g = shamsiToGregorian(today.year, today.month, today.day);
-  const d = new Date(g.year, g.month-1, g.day);
   if (type === 'week') {
+    const g = shamsiToGregorian(today.y, today.m, today.d);
+    const d = new Date(g.y, g.m-1, g.d);
     const dow = d.getDay();
     let diff;
     if (dow===6) diff=0; else if (dow===0) diff=1; else if (dow===1) diff=2;
@@ -1606,11 +1648,40 @@ function quickRange(type) {
     const fri = new Date(sat); fri.setDate(sat.getDate()+6);
     const sS = gregorianToShamsi(sat.getFullYear(), sat.getMonth()+1, sat.getDate());
     const fS = gregorianToShamsi(fri.getFullYear(), fri.getMonth()+1, fri.getDate());
-    fillRangeInputs(sS.year,sS.month,sS.day,fS.year,fS.month,fS.day);
-  } else if (type === 'month') fillRangeInputs(today.year, today.month, 1, today.year, today.month, 30);
-  else if (type === 'prevmonth') { let y = today.year, m = today.month - 1; if (m < 1) { m = 12; y--; } fillRangeInputs(y, m, 1, y, m, 30); }
-  else if (type === '30days') { const past = new Date(d); past.setDate(d.getDate()-30); const pS = gregorianToShamsi(past.getFullYear(), past.getMonth()+1, past.getDate()); fillRangeInputs(pS.year,pS.month,pS.day,today.year,today.month,today.day); }
+    fillRangeInputs(sS.y,sS.m,sS.d,fS.y,fS.m,fS.d);
+  } else if (type === 'month') {
+    fillRangeInputs(today.y, today.m, 1, today.y, today.m, 30);
+  } else if (type === 'prevmonth') {
+    let y = today.y, m = today.m - 1;
+    if (m < 1) { m = 12; y--; }
+    fillRangeInputs(y, m, 1, y, m, 30);
+  } else if (type === '30days') {
+    const g = shamsiToGregorian(today.y, today.m, today.d);
+    const d = new Date(g.y, g.m-1, g.d);
+    const past = new Date(d); past.setDate(d.getDate()-30);
+    const pS = gregorianToShamsi(past.getFullYear(), past.getMonth()+1, past.getDate());
+    fillRangeInputs(pS.y,pS.m,pS.d,today.y,today.m,today.d);
+  }
   calcRangeStats();
+}
+
+function calcRangeStats() {
+  const yF = parseInt(document.getElementById('sYearFrom').value);
+  const mF = parseInt(document.getElementById('sMonthFrom').value);
+  const dF = parseInt(document.getElementById('sDayFrom').value);
+  const yT = parseInt(document.getElementById('sYearTo').value);
+  const mT = parseInt(document.getElementById('sMonthTo').value);
+  const dT = parseInt(document.getElementById('sDayTo').value);
+  const rr = document.getElementById('rangeResult');
+  if (!rr) return;
+  if (!isValidShamsi(yF,mF,dF) || !isValidShamsi(yT,mT,dT)) { rr.innerHTML = '<div class="empty-msg">تاریخ معتبر نیست.</div>'; return; }
+  const from = shamsiComparable(yF,mF,dF); const to = shamsiComparable(yT,mT,dT);
+  if (from > to) { rr.innerHTML = '<div class="empty-msg">تاریخ شروع بعد از پایان است.</div>'; return; }
+  const arr = tasks.filter(t=>{ const c = shamsiComparable(t.year,t.month,t.day); return c>=from && c<=to; });
+  const done = arr.filter(t=>t.done).length;
+  const undone = arr.length - done;
+  const overdue = arr.filter(isOverdue).length;
+  rr.innerHTML = `<div class="stat-cards"><div class="stat-card"><div class="stat-icon">📋</div><div class="stat-info"><span class="stat-num">${arr.length}</span><span class="stat-lbl">کل</span></div></div><div class="stat-card"><div class="stat-icon">✅</div><div class="stat-info"><span class="stat-num">${done}</span><span class="stat-lbl">انجام‌شده</span></div></div><div class="stat-card"><div class="stat-icon">⏳</div><div class="stat-info"><span class="stat-num">${undone}</span><span class="stat-lbl">انجام‌نشده</span></div></div><div class="stat-card"><div class="stat-icon">⚠️</div><div class="stat-info"><span class="stat-num">${overdue}</span><span class="stat-lbl">عقب‌افتاده</span></div></div></div>`;
 }
 
 // ============================================================
@@ -1652,20 +1723,20 @@ function setupEvents() {
       const q = b.dataset.quick;
       ['fSearch','fFilterSubject','fFilterWorkType','fFilterType','fFilterPriority','fFilterStatus','fFilterTag','fYearFrom','fMonthFrom','fDayFrom','fYearTo','fMonthTo','fDayTo'].forEach(id=>{ const el = document.getElementById(id); if (el) el.value = ''; });
       const today = todayShamsi();
-      if (q === 'today') { document.getElementById('fYearFrom').value = today.year; document.getElementById('fMonthFrom').value = today.month; document.getElementById('fDayFrom').value = today.day; document.getElementById('fYearTo').value = today.year; document.getElementById('fMonthTo').value = today.month; document.getElementById('fDayTo').value = today.day; }
+      if (q === 'today') { document.getElementById('fYearFrom').value = today.y; document.getElementById('fMonthFrom').value = today.m; document.getElementById('fDayFrom').value = today.d; document.getElementById('fYearTo').value = today.y; document.getElementById('fMonthTo').value = today.m; document.getElementById('fDayTo').value = today.d; }
       else if (q === 'week') {
-        const g = shamsiToGregorian(today.year, today.month, today.day);
-        const d = new Date(g.year, g.month-1, g.day);
+        const g = shamsiToGregorian(today.y, today.m, today.d);
+        const d = new Date(g.y, g.m-1, g.d);
         const dow = d.getDay(); let diff;
         if (dow===6) diff=0; else if (dow===0) diff=1; else if (dow===1) diff=2; else if (dow===2) diff=3; else if (dow===3) diff=4; else if (dow===4) diff=5; else diff=6;
         const sat = new Date(d); sat.setDate(d.getDate()-diff);
         const fri = new Date(sat); fri.setDate(sat.getDate()+6);
         const sS = gregorianToShamsi(sat.getFullYear(), sat.getMonth()+1, sat.getDate());
         const fS = gregorianToShamsi(fri.getFullYear(), fri.getMonth()+1, fri.getDate());
-        document.getElementById('fYearFrom').value = sS.year; document.getElementById('fMonthFrom').value = sS.month; document.getElementById('fDayFrom').value = sS.day;
-        document.getElementById('fYearTo').value = fS.year; document.getElementById('fMonthTo').value = fS.month; document.getElementById('fDayTo').value = fS.day;
+        document.getElementById('fYearFrom').value = sS.y; document.getElementById('fMonthFrom').value = sS.m; document.getElementById('fDayFrom').value = sS.d;
+        document.getElementById('fYearTo').value = fS.y; document.getElementById('fMonthTo').value = fS.m; document.getElementById('fDayTo').value = fS.d;
       }
-      else if (q === 'month') { document.getElementById('fYearFrom').value = today.year; document.getElementById('fMonthFrom').value = today.month; document.getElementById('fDayFrom').value = 1; document.getElementById('fYearTo').value = today.year; document.getElementById('fMonthTo').value = today.month; document.getElementById('fDayTo').value = 30; }
+      else if (q === 'month') { document.getElementById('fYearFrom').value = today.y; document.getElementById('fMonthFrom').value = today.m; document.getElementById('fDayFrom').value = 1; document.getElementById('fYearTo').value = today.y; document.getElementById('fMonthTo').value = today.m; document.getElementById('fDayTo').value = 30; }
       else if (q === 'overdue') document.getElementById('fFilterStatus').value = 'overdue';
       else if (q === 'done') document.getElementById('fFilterStatus').value = 'done';
       else if (q === 'undone') document.getElementById('fFilterStatus').value = 'undone';
@@ -1679,23 +1750,22 @@ function setupEvents() {
       document.querySelectorAll('.subtab').forEach(x=>x.classList.remove('active'));
       b.classList.add('active'); currentSubtab = b.dataset.subtab;
       const today = todayShamsi();
-      if (currentSubtab === 'today') { document.getElementById('fYearFrom').value = today.year; document.getElementById('fMonthFrom').value = today.month; document.getElementById('fDayFrom').value = today.day; document.getElementById('fYearTo').value = today.year; document.getElementById('fMonthTo').value = today.month; document.getElementById('fDayTo').value = today.day; }
+      if (currentSubtab === 'today') { document.getElementById('fYearFrom').value = today.y; document.getElementById('fMonthFrom').value = today.m; document.getElementById('fDayFrom').value = today.d; document.getElementById('fYearTo').value = today.y; document.getElementById('fMonthTo').value = today.m; document.getElementById('fDayTo').value = today.d; }
       else if (currentSubtab === 'week') {
-        const g = shamsiToGregorian(today.year, today.month, today.day);
-        const d = new Date(g.year, g.month-1, g.day); const dow = d.getDay(); let diff;
+        const g = shamsiToGregorian(today.y, today.m, today.d);
+        const d = new Date(g.y, g.m-1, g.d); const dow = d.getDay(); let diff;
         if (dow===6) diff=0; else if (dow===0) diff=1; else if (dow===1) diff=2; else if (dow===2) diff=3; else if (dow===3) diff=4; else if (dow===4) diff=5; else diff=6;
         const sat = new Date(d); sat.setDate(d.getDate()-diff); const fri = new Date(sat); fri.setDate(sat.getDate()+6);
         const sS = gregorianToShamsi(sat.getFullYear(), sat.getMonth()+1, sat.getDate());
         const fS = gregorianToShamsi(fri.getFullYear(), fri.getMonth()+1, fri.getDate());
-        document.getElementById('fYearFrom').value = sS.year; document.getElementById('fMonthFrom').value = sS.month; document.getElementById('fDayFrom').value = sS.day;
-        document.getElementById('fYearTo').value = fS.year; document.getElementById('fMonthTo').value = fS.month; document.getElementById('fDayTo').value = fS.day;
+        document.getElementById('fYearFrom').value = sS.y; document.getElementById('fMonthFrom').value = sS.m; document.getElementById('fDayFrom').value = sS.d;
+        document.getElementById('fYearTo').value = fS.y; document.getElementById('fMonthTo').value = fS.m; document.getElementById('fDayTo').value = fS.d;
       } else { ['fYearFrom','fMonthFrom','fDayFrom','fYearTo','fMonthTo','fDayTo'].forEach(id=>{ const el = document.getElementById(id); if (el) el.value = ''; }); }
       renderTasksList();
     });
   });
 
   document.addEventListener('click', e=>{
-    // زیرکار inline
     const sm = e.target.closest('[data-show-more]');
     if (sm) { const id = sm.dataset.showMore; if (expandedTasks.has(id)) expandedTasks.delete(id); else expandedTasks.add(id); saveExpanded(); renderTasksList(); return; }
     const sti = e.target.closest('[data-subtask-toggle-inline]');
@@ -1711,7 +1781,6 @@ function setupEvents() {
     const sad = e.target.closest('[data-subtask-add-detail]');
     if (sad) { const tid = sad.dataset.subtaskAddDetail; const t = tasks.find(x=>x.id===tid); if (!t) return; const title = prompt('عنوان زیرکار جدید:'); if (title && title.trim()) { if (!t.subtasks) t.subtasks = []; t.subtasks.push({ title: title.trim(), desc: '', done: false }); saveTasks(); renderAll(); openTaskModal(t); toast('اضافه شد.', 'success'); } return; }
 
-    // دکمه‌های act
     const btn = e.target.closest('[data-act]');
     if (btn) {
       const act = btn.dataset.act; const id = btn.dataset.id || btn.dataset.taskId;
@@ -1721,13 +1790,11 @@ function setupEvents() {
       if (act === 'delete') { const removed = tasks.find(x=>x.id===id); if (!removed) return; tasks = tasks.filter(x=>x.id!==id); saveTasks(); populateSubjectFilter(); renderAll(); document.getElementById('modalOverlay').classList.remove('show'); lastDeletedTask = removed; toast('حذف شد.', 'info', { label: 'بازگردانی', callback: () => { if (lastDeletedTask) { tasks.push(lastDeletedTask); saveTasks(); populateSubjectFilter(); renderAll(); toast('بازگردانی شد.', 'success'); lastDeletedTask = null; } } }); return; }
     }
 
-    // درس‌ها
     const sc = e.target.closest('.subject-card');
     if (sc) { openSubjectPage(sc.dataset.subject); return; }
     const ci = e.target.closest('.schedule-cell-info');
     if (ci) { openSubjectPage(ci.dataset.subject); return; }
 
-    // تب‌های داخلی درس
     const stb = e.target.closest('.subject-tab-btn');
     if (stb) {
       const subj = stb.closest('.subject-page');
@@ -1740,15 +1807,13 @@ function setupEvents() {
       return;
     }
 
-    // یادداشت
     const na = e.target.closest('[data-note-add]');
-    if (na) { const subject = na.dataset.noteAdd; const title = prompt('عنوان یادداشت:'); if (title && title.trim()) { const text = prompt('متن یادداشت:') || ''; if (!subjectNotes[subject]) subjectNotes[subject] = []; subjectNotes[subject].push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2,7), title: title.trim(), text: text.trim(), tags: [], createdAt: Date.now() }); saveSubjectNotes(); openSubjectPage(subject); renderSubjects(); toast('یادداشت اضافه شد.', 'success'); } return; }
+    if (na) { const subject = na.dataset.noteAdd; const title = prompt('عنوان یادداشت:'); if (title && title.trim()) { const text = prompt('متن یادداشت:') || ''; if (!subjectNotes[subject]) subjectNotes[subject] = []; subjectNotes[subject].push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2,7), title: title.trim(), text: text.trim(), tags: [], createdAt: Date.now() }); saveSubjectNotes(); openSubjectPage(subject); renderSubjects(); toast('یادداشت اضافه شد.', 'success'); if (typeof SupaClient !== 'undefined' && SupaClient.isLoggedIn()) syncToCloud().catch(()=>{}); } return; }
     const ne = e.target.closest('[data-note-edit]');
-    if (ne) { const noteId = ne.dataset.noteEdit; const subject = currentSubjectPage; if (!subject || !subjectNotes[subject]) return; const note = subjectNotes[subject].find(n => n.id === noteId); if (!note) return; const title = prompt('عنوان جدید:', note.title); if (title === null) return; const text = prompt('متن جدید:', note.text || ''); if (text === null) return; note.title = title.trim() || note.title; note.text = text.trim(); saveSubjectNotes(); openSubjectPage(subject); toast('بروزرسانی شد.', 'success'); return; }
+    if (ne) { const noteId = ne.dataset.noteEdit; const subject = currentSubjectPage; if (!subject || !subjectNotes[subject]) return; const note = subjectNotes[subject].find(n => n.id === noteId); if (!note) return; const title = prompt('عنوان جدید:', note.title); if (title === null) return; const text = prompt('متن جدید:', note.text || ''); if (text === null) return; note.title = title.trim() || note.title; note.text = text.trim(); saveSubjectNotes(); openSubjectPage(subject); toast('بروزرسانی شد.', 'success'); if (typeof SupaClient !== 'undefined' && SupaClient.isLoggedIn()) syncToCloud().catch(()=>{}); return; }
     const nd = e.target.closest('[data-note-delete]');
-    if (nd) { const noteId = nd.dataset.noteDelete; const subject = currentSubjectPage; if (!subject || !subjectNotes[subject]) return; if (!confirm('این یادداشت حذف شود؟')) return; subjectNotes[subject] = subjectNotes[subject].filter(n => n.id !== noteId); saveSubjectNotes(); openSubjectPage(subject); renderSubjects(); toast('حذف شد.', 'info'); return; }
+    if (nd) { const noteId = nd.dataset.noteDelete; const subject = currentSubjectPage; if (!subject || !subjectNotes[subject]) return; if (!confirm('این یادداشت حذف شود؟')) return; subjectNotes[subject] = subjectNotes[subject].filter(n => n.id !== noteId); saveSubjectNotes(); openSubjectPage(subject); renderSubjects(); toast('حذف شد.', 'info'); if (typeof SupaClient !== 'undefined' && SupaClient.isLoggedIn()) syncToCloud().catch(()=>{}); return; }
 
-    // تقویم
     const cc = e.target.closest('.cal-cell:not(.empty)');
     if (cc && cc.dataset.day) { showCalendarDay(parseInt(cc.dataset.day)); return; }
     const go = e.target.closest('[data-goto]');
@@ -1756,17 +1821,57 @@ function setupEvents() {
     const dis = e.target.closest('[data-dismiss]');
     if (dis) { dis.closest('.alert-item').remove(); return; }
 
-    // برنامه روزانه
     const dt = e.target.closest('[data-daily-toggle]');
-    if (dt) { const idx = parseInt(dt.dataset.dailyToggle); const { year, month, day } = currentDailyDate; const items = loadDailyPlan(year, month, day); if (items[idx]) { items[idx].done = !items[idx].done; saveDailyPlan(year, month, day, items); renderDailyPlan(); toast(items[idx].done?'انجام شد.':'برگشت.', 'success'); } return; }
+    if (dt) { const idx = parseInt(dt.dataset.dailyToggle); const { y, m, d } = currentDailyDate; const key = dailyKey(y, m, d); const items = dailyPlans[key] || []; if (items[idx]) { items[idx].done = !items[idx].done; dailyPlans[key] = items; saveDailyPlans(); renderDailyPlans(); toast(items[idx].done?'انجام شد.':'برگشت.', 'success'); if (typeof SupaClient !== 'undefined' && SupaClient.isLoggedIn()) syncToCloud().catch(()=>{}); } return; }
     const dup = e.target.closest('[data-daily-up]');
-    if (dup) { const idx = parseInt(dup.dataset.dailyUp); if (idx > 0) { const { year, month, day } = currentDailyDate; const items = loadDailyPlan(year, month, day); [items[idx-1], items[idx]] = [items[idx], items[idx-1]]; saveDailyPlan(year, month, day, items); renderDailyPlan(); } return; }
+    if (dup) { const idx = parseInt(dup.dataset.dailyUp); const { y, m, d } = currentDailyDate; const key = dailyKey(y, m, d); const items = dailyPlans[key] || []; if (idx > 0) { [items[idx-1], items[idx]] = [items[idx], items[idx-1]]; dailyPlans[key] = items; saveDailyPlans(); renderDailyPlans(); } return; }
     const ddn = e.target.closest('[data-daily-down]');
-    if (ddn) { const idx = parseInt(ddn.dataset.dailyDown); const { year, month, day } = currentDailyDate; const items = loadDailyPlan(year, month, day); if (idx < items.length - 1) { [items[idx+1], items[idx]] = [items[idx], items[idx+1]]; saveDailyPlan(year, month, day, items); renderDailyPlan(); } return; }
+    if (ddn) { const idx = parseInt(ddn.dataset.dailyDown); const { y, m, d } = currentDailyDate; const key = dailyKey(y, m, d); const items = dailyPlans[key] || []; if (idx < items.length - 1) { [items[idx+1], items[idx]] = [items[idx], items[idx+1]]; dailyPlans[key] = items; saveDailyPlans(); renderDailyPlans(); } return; }
     const de = e.target.closest('[data-daily-edit]');
-    if (de) { const idx = parseInt(de.dataset.dailyEdit); const { year, month, day } = currentDailyDate; const items = loadDailyPlan(year, month, day); const item = items[idx]; if (!item) return; const title = prompt('عنوان جدید:', item.title); if (title === null) return; const duration = prompt('مدت زمان:', item.duration || ''); if (duration === null) return; item.title = title.trim() || item.title; item.duration = duration.trim(); saveDailyPlan(year, month, day, items); renderDailyPlan(); toast('بروزرسانی شد.', 'success'); return; }
+    if (de) { const idx = parseInt(de.dataset.dailyEdit); const { y, m, d } = currentDailyDate; const key = dailyKey(y, m, d); const items = dailyPlans[key] || []; const item = items[idx]; if (!item) return; const title = prompt('عنوان جدید:', item.title); if (title === null) return; const duration = prompt('مدت زمان:', item.duration || ''); if (duration === null) return; item.title = title.trim() || item.title; item.duration = duration.trim(); dailyPlans[key] = items; saveDailyPlans(); renderDailyPlans(); toast('بروزرسانی شد.', 'success'); if (typeof SupaClient !== 'undefined' && SupaClient.isLoggedIn()) syncToCloud().catch(()=>{}); return; }
     const dd = e.target.closest('[data-daily-delete]');
-    if (dd) { const idx = parseInt(dd.dataset.dailyDelete); if (confirm('این برنامه حذف شود؟')) { const { year, month, day } = currentDailyDate; const items = loadDailyPlan(year, month, day); items.splice(idx, 1); saveDailyPlan(year, month, day, items); renderDailyPlan(); toast('حذف شد.', 'info'); } return; }
+    if (dd) { const idx = parseInt(dd.dataset.dailyDelete); if (confirm('این برنامه حذف شود؟')) { const { y, m, d } = currentDailyDate; const key = dailyKey(y, m, d); const items = dailyPlans[key] || []; items.splice(idx, 1); dailyPlans[key] = items; saveDailyPlans(); renderDailyPlans(); toast('حذف شد.', 'info'); if (typeof SupaClient !== 'undefined' && SupaClient.isLoggedIn()) syncToCloud().catch(()=>{}); } return; }
+
+    // User dropdown toggle
+    const ut = e.target.closest('#userTrigger');
+    if (ut) {
+      e.stopPropagation();
+      const ud = document.getElementById('userDropdown');
+      if (ud) ud.classList.toggle('open');
+      return;
+    }
+    const umb = e.target.closest('#userMenuBackup');
+    if (umb) {
+      const ud = document.getElementById('userDropdown');
+      if (ud) ud.classList.remove('open');
+      if (typeof syncToCloud === 'function') syncToCloud(true).then(() => toast('بکاپ ابری انجام شد.', 'success'));
+      return;
+    }
+    const uml = e.target.closest('#userMenuLink');
+    if (uml) {
+      const ud = document.getElementById('userDropdown');
+      if (ud) ud.classList.remove('open');
+      if (typeof generateLinkCode === 'function') generateLinkCode();
+      return;
+    }
+    const ulg = e.target.closest('#userLogoutBtn');
+    if (ulg) {
+      const ud = document.getElementById('userDropdown');
+      if (ud) ud.classList.remove('open');
+      handleLogout();
+      return;
+    }
+    // close dropdown on outside click
+    if (!e.target.closest('#userDropdown')) {
+      const ud = document.getElementById('userDropdown');
+      if (ud) ud.classList.remove('open');
+    }
+
+    // about section buttons
+    const ab = e.target.closest('#aboutLinkBtn');
+    if (ab) { generateLinkCode(); return; }
+    const aa = e.target.closest('#aboutAuthBtn');
+    if (aa) { if (SupaClient.isLoggedIn()) handleLogout(); else showAuthModal('login'); return; }
   });
 
   const mc = document.getElementById('modalClose'); if (mc) mc.addEventListener('click', ()=>document.getElementById('modalOverlay').classList.remove('show'));
@@ -1777,7 +1882,7 @@ function setupEvents() {
   const cp = document.getElementById('calPrev'); const cn = document.getElementById('calNext'); const ctd = document.getElementById('calToday');
   if (cp) cp.addEventListener('click', ()=>{ currentCalMonth--; if (currentCalMonth < 1) { currentCalMonth = 12; currentCalYear--; } renderCalendar(); });
   if (cn) cn.addEventListener('click', ()=>{ currentCalMonth++; if (currentCalMonth > 12) { currentCalMonth = 1; currentCalYear++; } renderCalendar(); });
-  if (ctd) ctd.addEventListener('click', ()=>{ const t = todayShamsi(); currentCalYear = t.year; currentCalMonth = t.month; renderCalendar(); });
+  if (ctd) ctd.addEventListener('click', ()=>{ const t = todayShamsi(); currentCalYear = t.y; currentCalMonth = t.m; renderCalendar(); });
 
   const ss = document.getElementById('subjectSearch'); if (ss) ss.addEventListener('input', renderSubjects);
 
@@ -1800,60 +1905,31 @@ function setupEvents() {
   const fab = document.getElementById('fabAdd'); if (fab) fab.addEventListener('click', ()=>{ resetForm(); openSidePanel(); setTimeout(()=>document.getElementById('fTitle').focus(), 300); });
   const bof = document.getElementById('btnOpenForm'); if (bof) bof.addEventListener('click', ()=>{ resetForm(); openSidePanel(); setTimeout(()=>document.getElementById('fTitle').focus(), 300); });
 
-  // برنامه روزانه
-  const dPrev = document.getElementById('dailyPrev');
-  const dNext = document.getElementById('dailyNext');
-  const dToday = document.getElementById('dailyToday');
-  const dAdd = document.getElementById('dailyAddBtn');
-  if (dPrev) dPrev.addEventListener('click', ()=>{ const nd = addDaysToShamsi(currentDailyDate.year, currentDailyDate.month, currentDailyDate.day, -1); currentDailyDate = nd; renderDailyPlan(); });
-  if (dNext) dNext.addEventListener('click', ()=>{ const nd = addDaysToShamsi(currentDailyDate.year, currentDailyDate.month, currentDailyDate.day, 1); currentDailyDate = nd; renderDailyPlan(); });
-  if (dToday) dToday.addEventListener('click', ()=>{ const t = todayShamsi(); currentDailyDate = { year: t.year, month: t.month, day: t.day }; renderDailyPlan(); });
-  if (dAdd) dAdd.addEventListener('click', ()=>{
-    const { year, month, day } = currentDailyDate;
-    const items = loadDailyPlan(year, month, day);
-    const newIdx = items.length;
-    items.push({ id: Date.now().toString(36), title: '', duration: '', done: false });
-    saveDailyPlan(year, month, day, items);
-    renderDailyPlan();
-    setTimeout(() => {
-      const listEl = document.getElementById('dailyList');
-      if (!listEl) return;
-      const lastItem = listEl.children[newIdx];
-      if (!lastItem) return;
-      const title = prompt('عنوان برنامه:');
-      if (title && title.trim()) {
-        const duration = prompt('مدت زمان (اختیاری):') || '';
-        items[newIdx].title = title.trim();
-        items[newIdx].duration = duration.trim();
-        saveDailyPlan(year, month, day, items);
-        renderDailyPlan();
-        toast('برنامه اضافه شد.', 'success');
-      } else {
-        items.pop();
-        saveDailyPlan(year, month, day, items);
-        renderDailyPlan();
-      }
-    }, 50);
-  });
+  const dPrev = document.getElementById('dailyPrev'); const dNext = document.getElementById('dailyNext'); const dToday = document.getElementById('dailyToday'); const dAdd = document.getElementById('dailyAddBtn');
+  if (dPrev) dPrev.addEventListener('click', ()=>{ if (!currentDailyDate) { const t = todayShamsi(); currentDailyDate = { y: t.y, m: t.m, d: t.d }; } currentDailyDate = addDaysToShamsi(currentDailyDate.y, currentDailyDate.m, currentDailyDate.d, -1); renderDailyPlans(); });
+  if (dNext) dNext.addEventListener('click', ()=>{ if (!currentDailyDate) { const t = todayShamsi(); currentDailyDate = { y: t.y, m: t.m, d: t.d }; } currentDailyDate = addDaysToShamsi(currentDailyDate.y, currentDailyDate.m, currentDailyDate.d, 1); renderDailyPlans(); });
+  if (dToday) dToday.addEventListener('click', ()=>{ const t = todayShamsi(); currentDailyDate = { y: t.y, m: t.m, d: t.d }; renderDailyPlans(); });
+  if (dAdd) dAdd.addEventListener('click', ()=>{ const title = prompt('عنوان برنامه:'); if (!title || !title.trim()) return; const duration = prompt('مدت زمان (اختیاری):') || ''; const { y, m, d } = currentDailyDate || todayShamsi(); const key = dailyKey(y, m, d); if (!dailyPlans[key]) dailyPlans[key] = []; dailyPlans[key].push({ id: Date.now().toString(36), title: title.trim(), duration: duration.trim(), done: false }); saveDailyPlans(); renderDailyPlans(); toast('اضافه شد.', 'success'); if (typeof SupaClient !== 'undefined' && SupaClient.isLoggedIn()) syncToCloud().catch(()=>{}); });
 
-  // تنظیمات
   const sas = document.getElementById('setAutoSave'); if (sas) sas.addEventListener('change', e=>{ const s = loadSettings(); s.autoSave = e.target.checked; saveSettings(s); updateManualSaveRow(); toast(e.target.checked ? 'ذخیره خودکار روشن شد.' : 'خاموش شد.', 'info'); });
   const sdv = document.getElementById('setDefaultView'); if (sdv) sdv.addEventListener('change', e=>{ const s = loadSettings(); s.defaultView = e.target.value; saveSettings(s); const el = document.getElementById('fViewMode'); if (el) el.value = e.target.value; });
   const sfs = document.getElementById('setFontSize'); if (sfs) sfs.addEventListener('change', e=>{ const s = loadSettings(); s.fontSize = e.target.value; saveSettings(s); document.body.classList.remove('font-large','font-small'); if (e.target.value === 'large') document.body.classList.add('font-large'); else if (e.target.value === 'small') document.body.classList.add('font-small'); });
   const bms = document.getElementById('btnManualSave'); if (bms) bms.addEventListener('click', ()=>{ if (forceSaveTasks()) toast('ذخیره شد.', 'success'); });
 }
-
 // ============================================================
 //  راه‌اندازی
 // ============================================================
 document.addEventListener('DOMContentLoaded', ()=>{
+  if (typeof SupaClient !== 'undefined') {
+    SupaClient.loadSession();
+    updateAuthUI();
+  }
   loadTheme();
-  SupaClient.loadSession();
-  updateAuthUI();
   loadTasks();
   loadTags();
   loadExpanded();
   loadSubjectNotes();
+  loadDailyPlans();
   applySettings();
   renderThemeGrid();
   renderThemeDropdown();
@@ -1866,12 +1942,11 @@ document.addEventListener('DOMContentLoaded', ()=>{
   renderAll();
 
   const t = todayShamsi();
-  currentDailyDate = { year: t.year, month: t.month, day: t.day };
-
+  currentDailyDate = { y: t.y, m: t.m, d: t.d };
   const td = document.getElementById('todayDate');
   const tw = document.getElementById('todayWeekday');
-  if (td) td.textContent = `امروز: ${formatShamsi(t.year,t.month,t.day)}`;
-  if (tw) tw.textContent = getWeekdayFromShamsi(t.year,t.month,t.day);
+  if (td) td.textContent = `امروز: ${formatShamsi(t.y,t.m,t.d)}`;
+  if (tw) tw.textContent = getWeekdayFromShamsi(t.y,t.m,t.d);
 
   const savedGroup = localStorage.getItem(K.ACTIVE_GROUP) || 'home';
   switchGroup(savedGroup);
