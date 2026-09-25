@@ -1,5 +1,6 @@
 // ============================================================
 //  Authentication — لاگین، ثبت‌نام، خروج
+//  نسخه ۳.۵ کامل
 // ============================================================
 
 function showAuthModal(mode = 'login') {
@@ -21,7 +22,8 @@ function switchAuthTab(mode) {
   document.querySelectorAll('.auth-panel').forEach(p => {
     p.classList.toggle('active', p.dataset.authPanel === mode);
   });
-  document.getElementById('authError').textContent = '';
+  const e1 = document.getElementById('authError'); if (e1) e1.textContent = '';
+  const e2 = document.getElementById('authErrorSignup'); if (e2) e2.textContent = '';
 }
 
 async function handleLogin(e) {
@@ -31,23 +33,12 @@ async function handleLogin(e) {
   const errEl = document.getElementById('authError');
   errEl.textContent = '';
 
-  if (!username || !password) {
-    errEl.textContent = 'نام کاربری و پسورد رو وارد کن.';
-    return;
-  }
-  if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
-    errEl.textContent = 'نام کاربری باید ۳ تا ۲۰ کاراکتر انگلیسی/عدد/_ باشه.';
-    return;
-  }
-  if (password.length < 6) {
-    errEl.textContent = 'پسورد باید حداقل ۶ کاراکتر باشه.';
-    return;
-  }
+  if (!username || !password) { errEl.textContent = 'نام کاربری و پسورد رو وارد کن.'; return; }
+  if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) { errEl.textContent = 'نام کاربری باید ۳ تا ۲۰ کاراکتر انگلیسی/عدد/_ باشه.'; return; }
+  if (password.length < 6) { errEl.textContent = 'پسورد باید حداقل ۶ کاراکتر باشه.'; return; }
 
   const btn = document.getElementById('loginBtn');
-  btn.disabled = true;
-  btn.textContent = '...';
-
+  btn.disabled = true; btn.textContent = '...';
   try {
     await SupaClient.signIn(username, password);
     hideAuthModal();
@@ -56,8 +47,7 @@ async function handleLogin(e) {
   } catch(err) {
     errEl.textContent = err.message || 'خطا در ورود';
   } finally {
-    btn.disabled = false;
-    btn.textContent = 'ورود';
+    btn.disabled = false; btn.textContent = 'ورود';
   }
 }
 
@@ -67,30 +57,16 @@ async function handleSignup(e) {
   const username = document.getElementById('signupUsername').value.trim();
   const password = document.getElementById('signupPassword').value;
   const password2 = document.getElementById('signupPassword2').value;
-  const errEl = document.getElementById('authError');
+  const errEl = document.getElementById('authErrorSignup');
   errEl.textContent = '';
 
-  if (!firstName || !username || !password || !password2) {
-    errEl.textContent = 'همه فیلدها الزامی هستن.';
-    return;
-  }
-  if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
-    errEl.textContent = 'نام کاربری باید ۳ تا ۲۰ کاراکتر انگلیسی/عدد/_ باشه.';
-    return;
-  }
-  if (password.length < 6) {
-    errEl.textContent = 'پسورد باید حداقل ۶ کاراکتر باشه.';
-    return;
-  }
-  if (password !== password2) {
-    errEl.textContent = 'پسوردها یکسان نیستن.';
-    return;
-  }
+  if (!firstName || !username || !password || !password2) { errEl.textContent = 'همه فیلدها الزامی هستن.'; return; }
+  if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) { errEl.textContent = 'نام کاربری باید ۳ تا ۲۰ کاراکتر انگلیسی/عدد/_ باشه.'; return; }
+  if (password.length < 6) { errEl.textContent = 'پسورد باید حداقل ۶ کاراکتر باشه.'; return; }
+  if (password !== password2) { errEl.textContent = 'پسوردها یکسان نیستن.'; return; }
 
   const btn = document.getElementById('signupBtn');
-  btn.disabled = true;
-  btn.textContent = '...';
-
+  btn.disabled = true; btn.textContent = '...';
   try {
     await SupaClient.signUp(username, password, firstName);
     hideAuthModal();
@@ -98,13 +74,10 @@ async function handleSignup(e) {
     onLoginSuccess();
   } catch(err) {
     let msg = err.message || 'خطا در ثبت‌نام';
-    if (msg.includes('already registered') || msg.includes('already exists')) {
-      msg = 'این نام کاربری قبلاً ثبت شده.';
-    }
+    if (msg.includes('already registered') || msg.includes('already exists')) msg = 'این نام کاربری قبلاً ثبت شده.';
     errEl.textContent = msg;
   } finally {
-    btn.disabled = false;
-    btn.textContent = 'ثبت‌نام';
+    btn.disabled = false; btn.textContent = 'ثبت‌نام';
   }
 }
 
@@ -113,13 +86,11 @@ async function handleLogout() {
   await SupaClient.signOut();
   toast('خارج شدی.', 'info');
   updateAuthUI();
-  // بازگشت به حالت محلی
   loadFromLocalStorage();
   renderAll();
 }
 
 function onLoginSuccess() {
-  // انتقال داده محلی به ابر (اگه داشت)
   const localHasData = tasks.length > 0 || Object.keys(subjectNotes).length > 0;
   if (localHasData) {
     if (confirm('داده‌های محلی داری. می‌خوای به حسابت منتقل بشن؟')) {
@@ -130,6 +101,7 @@ function onLoginSuccess() {
     } else {
       if (confirm('داده‌های محلی پاک بشن؟')) {
         clearLocalData();
+        syncFromCloud();
       }
     }
   } else {
@@ -142,6 +114,8 @@ function updateAuthUI() {
   const loggedIn = SupaClient.isLoggedIn();
   const authBtn = document.getElementById('authBtn');
   const userInfo = document.getElementById('userInfo');
+  const aboutBtn = document.getElementById('aboutAuthBtn');
+  const aboutStatus = document.getElementById('aboutAccountStatus');
 
   if (authBtn) {
     if (loggedIn) {
@@ -156,8 +130,19 @@ function updateAuthUI() {
   if (userInfo) {
     userInfo.style.display = loggedIn ? 'flex' : 'none';
     if (loggedIn) {
-      userInfo.querySelector('.user-name').textContent = SupaClient.getFirstName() || '';
-      userInfo.querySelector('.user-username').textContent = '@' + (SupaClient.getUsername() || '');
+      const n = userInfo.querySelector('.user-name');
+      const u = userInfo.querySelector('.user-username');
+      if (n) n.textContent = SupaClient.getFirstName() || '';
+      if (u) u.textContent = '@' + (SupaClient.getUsername() || '');
+    }
+  }
+
+  if (aboutBtn) aboutBtn.textContent = loggedIn ? '🚪 خروج از حساب' : '🔐 ورود / ثبت‌نام';
+  if (aboutStatus) {
+    if (loggedIn) {
+      aboutStatus.innerHTML = `✅ وارد شدی به عنوان <strong>${SupaClient.getFirstName() || ''}</strong> (@${SupaClient.getUsername() || ''})`;
+    } else {
+      aboutStatus.innerHTML = '⚠️ وارد نشدی. داده‌ها فقط روی همین دستگاه ذخیره می‌شن.';
     }
   }
 }
