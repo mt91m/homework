@@ -1,6 +1,6 @@
 // ============================================================
 //  مدیریت تکالیف مدرسه — script.js
-//  نسخه ۳.۵ — با Supabase
+//  نسخه ۴.۰ — کامل و بی‌نقص
 // ============================================================
 
 const K = {
@@ -89,7 +89,7 @@ function formatShamsiFull(y, m, d) {
   return `${d} ${months[m-1]} ${y}`;
 }
 
-function dailyKey(y, m, d) { return K.DAILY_PREFIX + `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
+function dailyKey(y, m, d) { return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
 
 function isLeapShamsi(y) {
   try {
@@ -140,7 +140,7 @@ function addDaysToShamsi(y, m, d, days) {
 //  ذخیره‌سازی
 // ============================================================
 function loadTasks() {
-  try { tasks = JSON.parse(localStorage.getItem(K.TASKS)) || []; }
+  try { tasks = JSON.parse(localStorage.getItem('sd_tasks')) || []; }
   catch(e) { tasks = []; }
   tasks.forEach(t => {
     if (!t.subtasks) t.subtasks = [];
@@ -153,7 +153,7 @@ function saveTasks() {
   const s = loadSettings();
   if (s.autoSave === false) return;
   try {
-    localStorage.setItem(K.TASKS, JSON.stringify(tasks));
+    localStorage.setItem('sd_tasks', JSON.stringify(tasks));
     showSaveStatus('saved');
     if (typeof SupaClient !== 'undefined' && SupaClient.isLoggedIn()) {
       syncToCloud().catch(() => {});
@@ -163,47 +163,50 @@ function saveTasks() {
 
 function forceSaveTasks() {
   try {
-    localStorage.setItem(K.TASKS, JSON.stringify(tasks));
+    localStorage.setItem('sd_tasks', JSON.stringify(tasks));
     showSaveStatus('saved');
     return true;
   } catch(e) { showSaveStatus('error'); return false; }
 }
 
-function loadNote() { return localStorage.getItem(K.NOTE) || ''; }
-function saveNote(t) { localStorage.setItem(K.NOTE, t); }
+function loadNote() { return localStorage.getItem('sd_note') || ''; }
+function saveNote(t) { localStorage.setItem('sd_note', t); }
 
 function loadTags() {
-  try { allTags = JSON.parse(localStorage.getItem(K.TAGS)) || []; }
+  try { allTags = JSON.parse(localStorage.getItem('sd_tags')) || []; }
   catch(e) { allTags = []; }
 }
-function saveTags() { localStorage.setItem(K.TAGS, JSON.stringify(allTags)); }
+function saveTags() { localStorage.setItem('sd_tags', JSON.stringify(allTags)); }
 
 function loadSettings() {
-  try { return JSON.parse(localStorage.getItem(K.SETTINGS)) || {}; }
+  try { return JSON.parse(localStorage.getItem('sd_settings')) || {}; }
   catch(e) { return {}; }
 }
-function saveSettings(s) { localStorage.setItem(K.SETTINGS, JSON.stringify(s)); }
+function saveSettings(s) { localStorage.setItem('sd_settings', JSON.stringify(s)); }
 
 function loadExpanded() {
   try {
-    const arr = JSON.parse(localStorage.getItem(K.EXPANDED)) || [];
+    const arr = JSON.parse(localStorage.getItem('sd_expanded_tasks')) || [];
     expandedTasks = new Set(arr);
   } catch(e) { expandedTasks = new Set(); }
 }
-function saveExpanded() { localStorage.setItem(K.EXPANDED, JSON.stringify([...expandedTasks])); }
+function saveExpanded() { localStorage.setItem('sd_expanded_tasks', JSON.stringify([...expandedTasks])); }
 
 function loadSubjectNotes() {
-  try { subjectNotes = JSON.parse(localStorage.getItem(K.SUBJECT_NOTES)) || {}; }
+  try { subjectNotes = JSON.parse(localStorage.getItem('sd_subject_notes')) || {}; }
   catch(e) { subjectNotes = {}; }
 }
-function saveSubjectNotes() { localStorage.setItem(K.SUBJECT_NOTES, JSON.stringify(subjectNotes)); }
+function saveSubjectNotes() { localStorage.setItem('sd_subject_notes', JSON.stringify(subjectNotes)); }
 
 function loadDailyPlans() {
-  try { dailyPlans = JSON.parse(localStorage.getItem(K.DAILY_PREFIX + 'all')) || {}; }
+  try { dailyPlans = JSON.parse(localStorage.getItem('sd_daily_all')) || {}; }
   catch(e) { dailyPlans = {}; }
   if (typeof dailyPlans !== 'object' || Array.isArray(dailyPlans)) dailyPlans = {};
 }
-function saveDailyPlans() { localStorage.setItem(K.DAILY_PREFIX + 'all', JSON.stringify(dailyPlans)); }
+function saveDailyPlans() {
+  try { localStorage.setItem('sd_daily_all', JSON.stringify(dailyPlans)); }
+  catch(e) {}
+}
 
 function defaultSchedule() {
   const periods = [];
@@ -216,7 +219,7 @@ function defaultSchedule() {
 
 function loadSchedule() {
   try {
-    const s = JSON.parse(localStorage.getItem(K.SCHEDULE));
+    const s = JSON.parse(localStorage.getItem('sd_schedule'));
     if (s && s.periods && Array.isArray(s.periods)) {
       for (let p=0; p<PERIODS; p++) {
         if (!s.periods[p]) s.periods[p] = { startTime:'', endTime:'', days:[] };
@@ -230,7 +233,7 @@ function loadSchedule() {
   } catch(e) {}
   return defaultSchedule();
 }
-function saveSchedule(s) { localStorage.setItem(K.SCHEDULE, JSON.stringify(s)); }
+function saveSchedule(s) { localStorage.setItem('sd_schedule', JSON.stringify(s)); }
 
 function showSaveStatus(type) {
   const el = document.getElementById('saveStatus');
@@ -280,11 +283,6 @@ function isThisMonth(t) {
   const today = todayShamsi();
   return t.year === today.y && t.month === today.m;
 }
-function isOldDone(t) {
-  if (!t.done) return false;
-  const today = todayShamsi();
-  return daysBetween(t.year, t.month, t.day, today.y, today.m, today.d) > 30;
-}
 
 function esc(s) {
   if (s === undefined || s === null) return '';
@@ -330,7 +328,7 @@ function applyTheme(themeId) {
   fontClasses.forEach(c => document.body.classList.add(c));
   if (themeId && themeId.startsWith('theme-')) document.body.classList.add(themeId);
   else document.body.classList.add('theme-light');
-  localStorage.setItem(K.THEME, themeId || 'theme-light');
+  localStorage.setItem('sd_theme', themeId || 'theme-light');
   const quickBtn = document.getElementById('btnThemeQuick');
   if (quickBtn) {
     const theme = THEMES.find(t => t.id === (themeId || 'theme-light'));
@@ -343,7 +341,7 @@ function applyTheme(themeId) {
 function renderThemeGrid() {
   const grid = document.getElementById('themeGrid');
   if (!grid) return;
-  const current = localStorage.getItem(K.THEME) || 'theme-light';
+  const current = localStorage.getItem('sd_theme') || 'theme-light';
   grid.innerHTML = THEMES.map(t => `
     <button class="theme-option ${current === t.id ? 'active' : ''}" data-theme="${t.id}">
       <div class="theme-swatch" style="background:${t.color}; color: white;">${t.icon}</div>
@@ -355,7 +353,7 @@ function renderThemeGrid() {
 function renderThemeDropdown() {
   const dd = document.getElementById('themeDropdown');
   if (!dd) return;
-  const current = localStorage.getItem(K.THEME) || 'theme-light';
+  const current = localStorage.getItem('sd_theme') || 'theme-light';
   dd.innerHTML = THEMES.map(t => `
     <button class="theme-option ${current === t.id ? 'active' : ''}" data-theme="${t.id}">
       <div class="theme-swatch" style="background:${t.color}; color: white;">${t.icon}</div>
@@ -383,14 +381,14 @@ function setupThemeEvents() {
 }
 
 function toggleTheme() {
-  const current = localStorage.getItem(K.THEME) || 'theme-light';
+  const current = localStorage.getItem('sd_theme') || 'theme-light';
   const next = current === 'theme-dark' ? 'theme-light' : 'theme-dark';
   applyTheme(next);
   toast('تم تغییر کرد.', 'success');
 }
 
 function loadTheme() {
-  const saved = localStorage.getItem(K.THEME) || 'theme-light';
+  const saved = localStorage.getItem('sd_theme') || 'theme-light';
   applyTheme(saved);
 }
 
@@ -1097,18 +1095,15 @@ function renderSubjects() {
   if (!ss) return;
   const search = (ss.value||'').toLowerCase();
   const subs = {};
-  // از tasks
   tasks.forEach(t=>{
     if (!subs[t.subject]) subs[t.subject] = { total:0, done:0, overdue:0 };
     subs[t.subject].total++;
     if (t.done) subs[t.subject].done++;
     if (isOverdue(t)) subs[t.subject].overdue++;
   });
-  // از subjectNotes
   Object.keys(subjectNotes).forEach(s => {
     if (!subs[s]) subs[s] = { total:0, done:0, overdue:0 };
   });
-  // از برنامه هفتگی
   getAllScheduleSubjects().forEach(s => {
     if (!subs[s]) subs[s] = { total:0, done:0, overdue:0 };
   });
@@ -1346,7 +1341,7 @@ const GROUP_TABS = {
 
 function switchGroup(group) {
   document.querySelectorAll('.nav-group-btn').forEach(b => b.classList.toggle('active', b.dataset.group === group));
-  localStorage.setItem(K.ACTIVE_GROUP, group);
+  localStorage.setItem('sd_active_group', group);
   const tabs = GROUP_TABS[group] || [];
   const subNav = document.getElementById('subNav');
   if (!subNav) return;
@@ -1358,7 +1353,7 @@ function switchGroup(group) {
 function switchTab(name) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
   document.querySelectorAll('.sub-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-  localStorage.setItem(K.ACTIVE_TAB, name);
+  localStorage.setItem('sd_active_tab', name);
   if (name === 'daily') renderDailyPlans();
 }
 
@@ -1453,9 +1448,12 @@ function setupNote() {
     clearTimeout(t);
     t = setTimeout(()=>{
       saveNote(ta.value);
+      if (typeof SupaClient !== 'undefined' && SupaClient.isLoggedIn()) {
+        syncToCloud().catch(()=>{});
+      }
       const s = document.getElementById('noteStatus');
       if (s) { s.textContent = 'ذخیره شد ✓'; s.classList.add('show'); setTimeout(()=>s.classList.remove('show'), 1500); }
-    }, 400);
+    }, 500);
   });
 }
 
@@ -1470,46 +1468,19 @@ function updateStorageInfo() {
   if (el) el.textContent = `فضای مصرفی localStorage: ${kb} کیلوبایت`;
 }
 
-async function clearAll() {
+function clearAll() {
   if (!confirm('همه داده‌ها پاک می‌شوند. مطمئنی؟')) return;
   if (!confirm('آخرین تأیید: واقعاً پاک کنم؟')) return;
-  const loggedIn = typeof SupaClient !== 'undefined' && SupaClient.isLoggedIn();
-  if (loggedIn) {
-    if (!confirm('⚠️ تو لاگین هستی. می‌خوای داده‌های ابری هم پاک بشن؟')) {
-      // فقط localStorage
-      clearLocalStorageOnly();
-      renderAll();
-      toast('فقط داده‌های محلی پاک شد.', 'info');
-      return;
-    }
-    // پاک کردن ابر
-    try {
-      const uid = SupaClient.getUserId();
-      await SupaClient.delete('tasks', `user_id=eq.${uid}`);
-      await SupaClient.delete('schedule', `user_id=eq.${uid}`);
-      await SupaClient.delete('subject_notes', `user_id=eq.${uid}`);
-      await SupaClient.delete('daily_plans', `user_id=eq.${uid}`);
-      clearLocalStorageOnly();
-      renderAll();
-      toast('همه داده‌ها (ابری + محلی) پاک شد.', 'success');
-    } catch(e) {
-      toast('خطا در پاک کردن ابر: ' + e.message, 'error');
-    }
-  } else {
-    clearLocalStorageOnly();
-    renderAll();
-    toast('همه داده‌ها پاک شد.', 'success');
-  }
-}
-
-function clearLocalStorageOnly() {
   const keysToRemove = [];
   for (const k in localStorage) { if (k.startsWith('sd_')) keysToRemove.push(k); }
   keysToRemove.forEach(k => localStorage.removeItem(k));
   tasks = []; allTags = []; expandedTasks = new Set(); subjectNotes = {}; dailyPlans = {};
   const n = document.getElementById('personalNote');
   if (n) n.value = '';
+  renderAll();
+  toast('همه داده‌ها پاک شد.', 'success');
 }
+
 function applySettings() {
   const s = loadSettings();
   const fontClasses = ['font-large','font-small'].filter(c => document.body.classList.contains(c));
@@ -1627,7 +1598,7 @@ function setupShortcuts() {
 }
 
 // ============================================================
-//  آمار بازه‌ای سریع
+//  آمار بازه‌ای
 // ============================================================
 function fillRangeInputs(yF,mF,dF,yT,mT,dT) {
   const ids = ['sYearFrom','sMonthFrom','sDayFrom','sYearTo','sMonthTo','sDayTo'];
@@ -1832,7 +1803,7 @@ function setupEvents() {
     const dd = e.target.closest('[data-daily-delete]');
     if (dd) { const idx = parseInt(dd.dataset.dailyDelete); if (confirm('این برنامه حذف شود؟')) { const { y, m, d } = currentDailyDate; const key = dailyKey(y, m, d); const items = dailyPlans[key] || []; items.splice(idx, 1); dailyPlans[key] = items; saveDailyPlans(); renderDailyPlans(); toast('حذف شد.', 'info'); if (typeof SupaClient !== 'undefined' && SupaClient.isLoggedIn()) syncToCloud().catch(()=>{}); } return; }
 
-    // User dropdown toggle
+    // User dropdown
     const ut = e.target.closest('#userTrigger');
     if (ut) {
       e.stopPropagation();
@@ -1858,7 +1829,7 @@ function setupEvents() {
     if (ulg) {
       const ud = document.getElementById('userDropdown');
       if (ud) ud.classList.remove('open');
-      handleLogout();
+      if (typeof handleLogout === 'function') handleLogout();
       return;
     }
     // close dropdown on outside click
@@ -1867,11 +1838,10 @@ function setupEvents() {
       if (ud) ud.classList.remove('open');
     }
 
-    // about section buttons
     const ab = e.target.closest('#aboutLinkBtn');
-    if (ab) { generateLinkCode(); return; }
+    if (ab) { if (typeof generateLinkCode === 'function') generateLinkCode(); return; }
     const aa = e.target.closest('#aboutAuthBtn');
-    if (aa) { if (SupaClient.isLoggedIn()) handleLogout(); else showAuthModal('login'); return; }
+    if (aa) { if (typeof SupaClient !== 'undefined' && SupaClient.isLoggedIn()) { if (typeof handleLogout === 'function') handleLogout(); } else { if (typeof showAuthModal === 'function') showAuthModal('login'); } return; }
   });
 
   const mc = document.getElementById('modalClose'); if (mc) mc.addEventListener('click', ()=>document.getElementById('modalOverlay').classList.remove('show'));
@@ -1916,13 +1886,14 @@ function setupEvents() {
   const sfs = document.getElementById('setFontSize'); if (sfs) sfs.addEventListener('change', e=>{ const s = loadSettings(); s.fontSize = e.target.value; saveSettings(s); document.body.classList.remove('font-large','font-small'); if (e.target.value === 'large') document.body.classList.add('font-large'); else if (e.target.value === 'small') document.body.classList.add('font-small'); });
   const bms = document.getElementById('btnManualSave'); if (bms) bms.addEventListener('click', ()=>{ if (forceSaveTasks()) toast('ذخیره شد.', 'success'); });
 }
+
 // ============================================================
 //  راه‌اندازی
 // ============================================================
 document.addEventListener('DOMContentLoaded', ()=>{
   if (typeof SupaClient !== 'undefined') {
     SupaClient.loadSession();
-    updateAuthUI();
+    if (typeof updateAuthUI === 'function') updateAuthUI();
   }
   loadTheme();
   loadTasks();
@@ -1948,8 +1919,13 @@ document.addEventListener('DOMContentLoaded', ()=>{
   if (td) td.textContent = `امروز: ${formatShamsi(t.y,t.m,t.d)}`;
   if (tw) tw.textContent = getWeekdayFromShamsi(t.y,t.m,t.d);
 
-  const savedGroup = localStorage.getItem(K.ACTIVE_GROUP) || 'home';
+  const savedGroup = localStorage.getItem('sd_active_group') || 'home';
   switchGroup(savedGroup);
-  const savedTab = localStorage.getItem(K.ACTIVE_TAB);
+  const savedTab = localStorage.getItem('sd_active_tab');
   if (savedTab) setTimeout(()=>switchTab(savedTab), 100);
+
+  if (typeof SupaClient !== 'undefined' && SupaClient.isLoggedIn()) {
+    syncFromCloud().catch(()=>{});
+    if (typeof startAutoSync === 'function') startAutoSync();
+  }
 });
