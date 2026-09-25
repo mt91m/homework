@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>مدیریت تکالیف مدرسه</title>
+<meta name="theme-color" content="#1e6f9f">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div class="app">
+
+  <header class="header">
+    <div class="header-main">
+      <div class="header-right">
+        <h1 class="header-title">📚 مدیریت تکالیف مدرسه</h1>
+        <div class="today-info">
+          <span id="todayDate">—</span>
+          <span id="todayWeekday" class="weekday-badge">—</span>
+        </div>
+      </div>
+      <div class="header-left">
+        <div class="user-info" id="userInfo" style="display:none">
+  <span class="user-name"></span>
+  <span class="user-username"></span>
+</div>
+        <div class="global-search">
+          <input type="text" id="globalSearch" placeholder="🔍 جست‌وجو..." autocomplete="off">
+          <div class="global-search-results" id="globalSearchResults"></div>
+        </div>
+        <div class="theme-quick" id="themeQuick">
+          <button id="btnThemeQuick" class="btn btn-icon" title="تغییر تم">🌙</button>
+          <button id="authBtn" class="btn btn-outline">🔐 ورود</button>
+          <div class="theme-dropdown" id="themeDropdown"></div>
+        </div>
+        <button id="btnExportTxt" class="btn btn-outline" title="خروجی TXT">📄 TXT</button>
+        <button id="btnExportPdf" class="btn btn-outline" title="خروجی PDF">🖨️ PDF</button>
+        <button id="btnBackup" class="btn btn-outline" title="بکاپ JSON">💾 بکاپ</button>
+        <button id="btnRestore" class="btn btn-outline" title="بازیابی JSON">📂 بازیابی</button>
+        <input type="file" id="fileRestore" accept=".json" hidden>
+      </div>
+    </div>
+    <div id="alertBar" class="alert-bar"></div>
+    <div class="save-status" id="saveStatus"></div>
+  </header>
+
+  <nav class="main-nav">
+    <div class="nav-group">
+      <button class="nav-group-btn active" data-group="home">
+        <span class="nav-icon">🏠</span>
+        <span class="nav-label">خانه</span>
+      </button>
+      <button class="nav-group-btn" data-group="tasks">
+        <span class="nav-icon">📋</span>
+        <span class="nav-label">کار و دروس</span>
+      </button>
+      <button class="nav-group-btn" data-group="schedule">
+        <span class="nav-icon">📅</span>
+        <span class="nav-label">برنامه</span>
+      </button>
+      <button class="nav-group-btn" data-group="more">
+        <span class="nav-icon">ℹ️</span>
+        <span class="nav-label">بیشتر</span>
+      </button>
+    </div>
+    <div class="sub-nav" id="subNav"></div>
+  </nav>
+
+  <main class="tab-content">
+
+    <section class="tab-panel active" id="tab-dashboard" data-group="home">
+      <div class="stat-cards" id="statCards"></div>
+      <div class="progress-section card">
+        <h3>📈 پیشرفت</h3>
+        <div class="progress-item">
+          <span>این هفته</span>
+          <div class="progress-bar"><div class="progress-fill" id="progressWeek"></div></div>
+          <span id="progressWeekText">0%</span>
+        </div>
+        <div class="progress-item">
+          <span>این ماه</span>
+          <div class="progress-bar"><div class="progress-fill" id="progressMonth"></div></div>
+          <span id="progressMonthText">0%</span>
+        </div>
+      </div>
+      <div class="card">
+        <h3>🏅 دستاوردها</h3>
+        <div class="badges" id="badgesContainer"></div>
+      </div>
+      <div class="card">
+        <h3>📊 روند هفتگی</h3>
+        <div class="weekly-chart" id="weeklyChart"></div>
+      </div>
+      <div class="card">
+        <h3>📌 کارهای امروز (خلاصه)</h3>
+        <div id="dashboardToday"></div>
+      </div>
+      <div class="card">
+        <h3>⚠️ عقب‌افتاده‌ها (خلاصه)</h3>
+        <div id="dashboardOverdue"></div>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="tab-overview" data-group="home">
+      <div class="overview-grid">
+        <div class="overview-card card">
+          <h3>📌 کارهای امروز</h3>
+          <div class="overview-numbers" id="ovTodayNumbers"></div>
+          <div class="overview-list" id="ovTodayList"></div>
+          <button class="btn btn-primary btn-block" data-goto="tasks" data-quick="today">مشاهده همه</button>
+        </div>
+        <div class="overview-card card">
+          <h3>📅 کارهای این هفته</h3>
+          <div class="overview-numbers" id="ovWeekNumbers"></div>
+          <div class="overview-list" id="ovWeekList"></div>
+          <button class="btn btn-primary btn-block" data-goto="tasks" data-quick="week">مشاهده همه</button>
+        </div>
+        <div class="overview-card card">
+          <h3>📋 کل کارها</h3>
+          <div class="overview-numbers" id="ovAllNumbers"></div>
+          <div class="overview-chart" id="ovAllChart"></div>
+          <button class="btn btn-primary btn-block" data-goto="tasks">مشاهده همه</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="tab-tasks" data-group="tasks">
+      <div class="card filter-card">
+        <h3>🔍 جست‌وجو و فیلتر</h3>
+        <div class="filter-grid">
+          <input type="text" id="fSearch" placeholder="جست‌وجو...">
+          <select id="fFilterSubject"><option value="">همه دروس</option></select>
+          <select id="fFilterWorkType">
+            <option value="">همه انواع کار</option>
+            <option value="حضوری">حضوری</option>
+            <option value="آفلاین">آفلاین</option>
+          </select>
+          <select id="fFilterType">
+            <option value="">همه فعالیت‌ها</option>
+            <option value="تکلیف">تکلیف</option>
+            <option value="امتحان">امتحان</option>
+            <option value="پروژه">پروژه</option>
+            <option value="یادآوری">یادآوری</option>
+          </select>
+          <select id="fFilterPriority">
+            <option value="">همه اولویت‌ها</option>
+            <option value="کم">کم</option>
+            <option value="متوسط">متوسط</option>
+            <option value="زیاد">زیاد</option>
+          </select>
+          <select id="fFilterStatus">
+            <option value="">همه وضعیت‌ها</option>
+            <option value="done">انجام‌شده</option>
+            <option value="undone">انجام‌نشده</option>
+            <option value="overdue">عقب‌افتاده</option>
+          </select>
+          <select id="fFilterTag"><option value="">همه برچسب‌ها</option></select>
+          <select id="fSort">
+            <option value="date-asc">مرتب: تاریخ (صعودی)</option>
+            <option value="date-desc">مرتب: تاریخ (نزولی)</option>
+            <option value="priority-desc">مرتب: اولویت (زیاد به کم)</option>
+            <option value="priority-asc">مرتب: اولویت (کم به زیاد)</option>
+            <option value="subject-asc">مرتب: درس (الفبایی)</option>
+            <option value="title-asc">مرتب: عنوان (الفبایی)</option>
+          </select>
+          <select id="fGroupBy">
+            <option value="none">بدون گروه‌بندی</option>
+            <option value="due">گروه: موعد</option>
+            <option value="subject">گروه: درس</option>
+            <option value="priority">گروه: اولویت</option>
+          </select>
+          <select id="fViewMode">
+            <option value="card">نمایش: کارت</option>
+            <option value="compact">نمایش: فشرده</option>
+          </select>
+        </div>
+        <div class="date-range">
+          <span>از:</span>
+          <input type="number" id="fYearFrom" placeholder="سال" min="1300" max="1500">
+          <input type="number" id="fMonthFrom" placeholder="ماه" min="1" max="12">
+          <input type="number" id="fDayFrom" placeholder="روز" min="1" max="31">
+          <span>تا:</span>
+          <input type="number" id="fYearTo" placeholder="سال" min="1300" max="1500">
+          <input type="number" id="fMonthTo" placeholder="ماه" min="1" max="12">
+          <input type="number" id="fDayTo" placeholder="روز" min="1" max="31">
+        </div>
+        <div class="quick-filters">
+          <button class="btn btn-chip" data-quick="today">امروز</button>
+          <button class="btn btn-chip" data-quick="week">این هفته</button>
+          <button class="btn btn-chip" data-quick="month">این ماه</button>
+          <button class="btn btn-chip" data-quick="overdue">عقب‌افتاده</button>
+          <button class="btn btn-chip" data-quick="done">انجام‌شده</button>
+          <button class="btn btn-chip" data-quick="undone">انجام‌نشده</button>
+          <button class="btn btn-chip" data-quick="high">اولویت زیاد</button>
+          <button class="btn btn-chip" data-quick="clear">پاک کردن فیلترها</button>
+        </div>
+      </div>
+
+      <div class="subtabs">
+        <button class="subtab active" data-subtab="all">همه کارها</button>
+        <button class="subtab" data-subtab="today">امروز</button>
+        <button class="subtab" data-subtab="week">این هفته</button>
+      </div>
+
+      <div class="card">
+        <div id="tasksList" class="task-list"></div>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="tab-subjects" data-group="tasks">
+      <div class="card">
+        <h3>📚 دروس</h3>
+        <p class="hint">همه درس‌های برنامه هفتگی اینجا نمایش داده می‌شن. روی هر درس کلیک کن تا یادداشت‌ها و کارهاش رو ببینی.</p>
+        <input type="text" id="subjectSearch" placeholder="جست‌وجوی درس..." class="subject-search">
+        <div class="subject-cards" id="subjectCards"></div>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="tab-form" data-group="tasks">
+      <div class="card">
+        <h2>➕ افزودن کار جدید</h2>
+        <p class="hint">برای افزودن کار جدید، روی دکمه زیر کلیک کن یا از دکمه شناور ➕ پایین صفحه استفاده کن.</p>
+        <button class="btn btn-primary" id="btnOpenForm">➕ باز کردن فرم افزودن کار</button>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="tab-stats" data-group="tasks">
+      <div class="card">
+        <h3>📊 آمار کلی</h3>
+        <div class="stat-cards" id="statCardsFull"></div>
+      </div>
+      <div class="card">
+        <h3>⏱️ آمار زمانی</h3>
+        <div id="timeStats"></div>
+      </div>
+      <div class="card">
+        <h3>📈 آمار بر اساس درس</h3>
+        <div class="table-wrap"><table class="stats-table" id="statsBySubject"></table></div>
+      </div>
+      <div class="card">
+        <h3>🎯 آمار بر اساس اولویت</h3>
+        <div class="table-wrap"><table class="stats-table" id="statsByPriority"></table></div>
+      </div>
+      <div class="card">
+        <h3>📚 آمار بر اساس نوع فعالیت</h3>
+        <div class="table-wrap"><table class="stats-table" id="statsByType"></table></div>
+      </div>
+      <div class="card">
+        <h3>🏷️ آمار بر اساس نوع کار</h3>
+        <div class="table-wrap"><table class="stats-table" id="statsByWorkType"></table></div>
+      </div>
+      <div class="card">
+        <h3>📅 آمار بر اساس روز هفته</h3>
+        <div class="table-wrap"><table class="stats-table" id="statsByWeekday"></table></div>
+      </div>
+      <div class="card">
+        <h3>📆 آمار بازه‌ای</h3>
+        <div class="date-range">
+          <span>از:</span>
+          <input type="number" id="sYearFrom" placeholder="سال" min="1300" max="1500">
+          <input type="number" id="sMonthFrom" placeholder="ماه" min="1" max="12">
+          <input type="number" id="sDayFrom" placeholder="روز" min="1" max="31">
+          <span>تا:</span>
+          <input type="number" id="sYearTo" placeholder="سال" min="1300" max="1500">
+          <input type="number" id="sMonthTo" placeholder="ماه" min="1" max="12">
+          <input type="number" id="sDayTo" placeholder="روز" min="1" max="31">
+        </div>
+        <div class="quick-filters">
+          <button class="btn btn-chip" data-range="week">این هفته</button>
+          <button class="btn btn-chip" data-range="month">این ماه</button>
+          <button class="btn btn-chip" data-range="prevmonth">ماه قبل</button>
+          <button class="btn btn-chip" data-range="30days">۳۰ روز اخیر</button>
+        </div>
+        <button class="btn btn-primary" id="btnRangeStats">محاسبه آمار</button>
+        <div class="range-result" id="rangeResult"></div>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="tab-calendar" data-group="schedule">
+      <div class="card">
+        <div class="calendar-header">
+          <button class="btn btn-secondary" id="calPrev">◀ ماه قبل</button>
+          <h3 id="calTitle">—</h3>
+          <button class="btn btn-secondary" id="calNext">ماه بعد ▶</button>
+          <button class="btn btn-primary" id="calToday">برو به امروز</button>
+        </div>
+        <div class="calendar-legend">
+          <span><span class="legend-dot dot-done"></span> همه انجام شده</span>
+          <span><span class="legend-dot dot-undone"></span> کار انجام‌نشده</span>
+          <span><span class="legend-dot dot-overdue"></span> عقب‌افتاده</span>
+        </div>
+        <div class="calendar-grid" id="calendarGrid"></div>
+        <div class="calendar-day-detail" id="calDayDetail"></div>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="tab-schedule" data-group="schedule">
+      <div class="card">
+        <h3>📅 برنامه هفتگی مدرسه</h3>
+        <p class="hint">اسم درس هر زنگ را وارد کنید. کارهای هر درس خودکار نمایش داده می‌شوند.</p>
+        <div class="table-wrap">
+          <table class="schedule-table" id="scheduleTable">
+            <thead>
+              <tr>
+                <th>زنگ / ساعت</th>
+                <th>شنبه</th>
+                <th>یکشنبه</th>
+                <th>دوشنبه</th>
+                <th>سه‌شنبه</th>
+                <th>چهارشنبه</th>
+                <th>پنجشنبه</th>
+              </tr>
+            </thead>
+            <tbody id="scheduleBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="tab-daily" data-group="schedule">
+      <div class="card daily-card">
+        <div class="daily-header">
+          <button class="btn btn-secondary" id="dailyPrev">◀ روز قبل</button>
+          <div class="daily-date">
+            <h3 id="dailyDateTitle">—</h3>
+            <span id="dailyDateWeekday">—</span>
+          </div>
+          <button class="btn btn-secondary" id="dailyNext">روز بعد ▶</button>
+          <button class="btn btn-primary" id="dailyToday">📅 امروز</button>
+        </div>
+        <div class="daily-body" id="dailyBody">
+          <div class="daily-list" id="dailyList"></div>
+          <button class="daily-add-btn" id="dailyAddBtn">➕ افزودن برنامه</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="tab-note" data-group="more">
+      <div class="card">
+        <h3>📝 یادداشت شخصی</h3>
+        <textarea id="personalNote" rows="12" placeholder="یادداشت آزاد خود را اینجا بنویسید... (ذخیره خودکار)"></textarea>
+        <div class="note-status" id="noteStatus"></div>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="tab-settings" data-group="more">
+      <div class="card">
+        <h3>⚙️ تنظیمات</h3>
+        <div class="settings-section">
+          <h4>🎨 تم برنامه</h4>
+          <div class="theme-grid" id="themeGrid"></div>
+        </div>
+        <div class="settings-section">
+          <h4>تنظیمات کاربری</h4>
+          <label class="setting-row">
+            <span>ذخیره خودکار</span>
+            <input type="checkbox" id="setAutoSave" checked>
+          </label>
+          <label class="setting-row">
+            <span>حالت نمایش پیش‌فرض</span>
+            <select id="setDefaultView">
+              <option value="card">کارت</option>
+              <option value="compact">فشرده</option>
+            </select>
+          </label>
+          <label class="setting-row">
+            <span>اندازه فونت</span>
+            <select id="setFontSize">
+              <option value="normal">معمولی</option>
+              <option value="large">بزرگ</option>
+              <option value="small">کوچک</option>
+            </select>
+          </label>
+          <div class="setting-row" id="manualSaveRow" style="display:none">
+            <span>ذخیره دستی</span>
+            <button class="btn btn-primary" id="btnManualSave">💾 ذخیره الان</button>
+          </div>
+        </div>
+        <div class="settings-section">
+          <h4>بکاپ و بازیابی</h4>
+          <div class="settings-actions">
+            <button class="btn btn-primary" id="btnExportTxt2">📄 خروجی TXT</button>
+            <button class="btn btn-primary" id="btnExportPdf2">🖨️ خروجی PDF</button>
+            <button class="btn btn-primary" id="btnBackup2">💾 بکاپ JSON</button>
+            <button class="btn btn-primary" id="btnRestore2">📂 بازیابی JSON</button>
+            <button class="btn btn-danger" id="btnClearAll">🗑️ پاک کردن همه داده‌ها</button>
+          </div>
+        </div>
+        <div class="storage-info" id="storageInfo"></div>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="tab-about" data-group="more">
+      <div class="card">
+        <h2>ℹ️ درباره و راهنمایی</h2>
+
+        <div class="about-section">
+          <h3>درباره برنامه</h3>
+          <p>مدیریت تکالیف مدرسه، یه برنامه ساده و کامل برای مدیریت کارهای دانش‌آموزی.</p>
+          <ul>
+            <li><strong>نسخه:</strong> ۳</li>
+            <li><strong>فناوری:</strong> HTML + CSS + JavaScript خالص</li>
+            <li><strong>ذخیره‌سازی:</strong> localStorage</li>
+          </ul>
+        </div>
+<div class="about-section">
+  <h3>🔐 حساب کاربری</h3>
+  <p>با ساخت حساب کاربری، داده‌ها توی ابر ذخیره می‌شن و از هر دستگاهی قابل دسترسن.</p>
+  <ul>
+    <li>بدون حساب: داده‌ها فقط روی همین دستگاه</li>
+    <li>با حساب: داده‌ها روی ابر + دستگاه</li>
+    <li>برای اتصال بات بله: از تنظیمات کد بگیر</li>
+  </ul>
+  <button class="btn btn-primary" onclick="showAuthModal('login')">🔐 ورود / ثبت‌نام</button>
+  <button class="btn btn-secondary" onclick="generateLinkCode()">🔗 اتصال به بات بله</button>
+</div>
+        <div class="about-section">
+          <h3>کلیدهای میانبر</h3>
+          <table class="shortcuts-table">
+            <tr><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd></td><td>افزودن کار</td></tr>
+            <tr><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Q</kbd></td><td>تب خانه</td></tr>
+            <tr><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>W</kbd></td><td>تب کار و دروس</td></tr>
+            <tr><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd></td><td>تب برنامه</td></tr>
+            <tr><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd></td><td>تب بیشتر</td></tr>
+            <tr><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd></td><td>جست‌وجو</td></tr>
+            <tr><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Y</kbd></td><td>تغییر تم</td></tr>
+            <tr><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd></td><td>خروجی TXT</td></tr>
+            <tr><td><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>H</kbd></td><td>بکاپ JSON</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>بستن پنل</td></tr>
+          </table>
+        </div>
+
+        <div class="about-section">
+          <h3>سوالات متداول</h3>
+          <details><summary>داده‌هام کجا ذخیره می‌شه؟</summary><p>توی localStorage مرورگر. حتماً بکاپ بگیر.</p></details>
+          <details><summary>برنامه روزانه چیه؟</summary><p>برای هر روز، برنامه‌های خودت رو مثل کاغذ یادداشت می‌نویسی. با دکمه‌های روز قبل و بعد می‌تونی جابه‌جا بشی.</p></details>
+          <details><summary>دفترچه یادداشت درسی کجاست؟</summary><p>توی تب «کار و دروس» → روی هر درس کلیک کن → تب یادداشت‌ها.</p></details>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <button class="fab" id="fabAdd" title="افزودن کار">➕</button>
+
+  <div class="side-panel-overlay" id="sidePanelOverlay">
+    <div class="side-panel">
+      <div class="side-panel-header">
+        <h3 id="formTitleSide">➕ افزودن کار جدید</h3>
+        <button class="btn btn-icon" id="sidePanelClose">✖</button>
+      </div>
+      <div class="side-panel-body">
+        <form id="taskForm">
+          <input type="hidden" id="editId" value="">
+          <div class="form-step active" data-step="1">
+            <h4>مرحله ۱: اطلاعات اصلی</h4>
+            <div class="form-grid">
+              <div class="form-group full">
+                <label>عنوان <span class="req">*</span></label>
+                <input type="text" id="fTitle" required placeholder="مثلاً: حل تمرین ریاضی">
+              </div>
+              <div class="form-group">
+                <label>درس <span class="req">*</span></label>
+                <select id="fSubject" required>
+                  <option value="">— انتخاب درس —</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>نوع کار</label>
+                <select id="fWorkType">
+                  <option value="حضوری">حضوری</option>
+                  <option value="آفلاین">آفلاین</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>نوع فعالیت</label>
+                <select id="fType">
+                  <option value="تکلیف">تکلیف</option>
+                  <option value="امتحان">امتحان</option>
+                  <option value="پروژه">پروژه</option>
+                  <option value="یادآوری">یادآوری</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="form-step" data-step="2">
+            <h4>مرحله ۲: زمان</h4>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>سال موعد <span class="req">*</span></label>
+                <input type="number" id="fYear" min="1300" max="1500" required placeholder="1403">
+              </div>
+              <div class="form-group">
+                <label>ماه موعد <span class="req">*</span></label>
+                <input type="number" id="fMonth" min="1" max="12" required placeholder="5">
+              </div>
+              <div class="form-group">
+                <label>روز موعد <span class="req">*</span></label>
+                <input type="number" id="fDay" min="1" max="31" required placeholder="12">
+              </div>
+              <div class="form-group">
+                <label>روز هفته (خودکار)</label>
+                <input type="text" id="fWeekday" readonly placeholder="—">
+              </div>
+              <div class="form-group" id="deliverDayGroup">
+                <label>روز تحویل</label>
+                <select id="fDeliverDay"><option value="">— انتخاب روز —</option></select>
+              </div>
+              <div class="form-group" id="deliverTimeGroup">
+                <label>ساعت تحویل</label>
+                <select id="fDeliverTime"><option value="">— انتخاب ساعت —</option></select>
+              </div>
+              <div class="form-group" id="freeTimeGroup" style="display:none">
+                <label>ساعت (آزاد)</label>
+                <input type="time" id="fFreeTime" value="08:00">
+              </div>
+              <div class="form-group">
+                <label>زمان تقریبی انجام</label>
+                <select id="fEstTime">
+                  <option value="0">— انتخاب —</option>
+                  <option value="15">۱۵ دقیقه</option>
+                  <option value="30">۳۰ دقیقه</option>
+                  <option value="45">۴۵ دقیقه</option>
+                  <option value="60">۱ ساعت</option>
+                  <option value="90">۱.۵ ساعت</option>
+                  <option value="120">۲ ساعت</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="form-step" data-step="3">
+            <h4>مرحله ۳: جزئیات</h4>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>محل تحویل</label>
+                <input type="text" id="fLocation" placeholder="مثلاً: کلاس ۱۰۱">
+              </div>
+              <div class="form-group">
+                <label>اولویت</label>
+                <select id="fPriority">
+                  <option value="کم">کم</option>
+                  <option value="متوسط" selected>متوسط</option>
+                  <option value="زیاد">زیاد</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>وضعیت</label>
+                <select id="fDone">
+                  <option value="false">انجام نشده</option>
+                  <option value="true">انجام شده</option>
+                </select>
+              </div>
+              <div class="form-group full">
+                <label>توضیحات</label>
+                <textarea id="fDesc" rows="2" placeholder="توضیحات اضافه..."></textarea>
+              </div>
+              <div class="form-group full">
+                <label>برچسب‌ها</label>
+                <div class="tags-input" id="tagsInput">
+                  <input type="text" id="fTagInput" placeholder="تایپ کنید و Enter بزنید...">
+                </div>
+                <div class="tags-suggestions" id="tagSuggestions"></div>
+              </div>
+            </div>
+          </div>
+          <div class="form-step" data-step="4">
+            <h4>مرحله ۴: زیرکارها</h4>
+            <div id="subtasksList"></div>
+            <button type="button" class="btn btn-secondary" id="btnAddSubtask">➕ افزودن زیرکار</button>
+          </div>
+          <div class="form-nav">
+            <button type="button" class="btn btn-secondary" id="btnPrevStep" style="display:none">مرحله قبل</button>
+            <button type="button" class="btn btn-primary" id="btnNextStep">مرحله بعد</button>
+            <button type="submit" class="btn btn-primary" id="btnSubmit" style="display:none">💾 ذخیره</button>
+            <button type="button" class="btn btn-secondary" id="btnCancel" style="display:none">لغو ویرایش</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modalTitle">جزئیات</h3>
+        <button class="btn btn-icon" id="modalClose">✖</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+</div>
+<!-- مودال لاگین -->
+<div class="auth-modal" id="authModal">
+  <div class="auth-box">
+    <button class="auth-close" onclick="hideAuthModal()">✖</button>
+
+    <div class="auth-tabs">
+      <button class="auth-tab active" data-auth-tab="login" onclick="switchAuthTab('login')">ورود</button>
+      <button class="auth-tab" data-auth-tab="signup" onclick="switchAuthTab('signup')">ثبت‌نام</button>
+    </div>
+
+    <div class="auth-panel active" data-auth-panel="login">
+      <h3>🔐 ورود به حساب</h3>
+      <form onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label>نام کاربری</label>
+          <input type="text" id="loginUsername" placeholder="username" autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label>پسورد</label>
+          <input type="password" id="loginPassword" placeholder="••••••" autocomplete="current-password">
+        </div>
+        <div class="auth-error" id="authError"></div>
+        <button type="submit" class="btn btn-primary btn-block" id="loginBtn">ورود</button>
+      </form>
+    </div>
+
+    <div class="auth-panel" data-auth-panel="signup">
+      <h3>📝 ثبت‌نام</h3>
+      <form onsubmit="handleSignup(event)">
+        <div class="form-group">
+          <label>اسم</label>
+          <input type="text" id="signupFirstName" placeholder="مثلاً: علی">
+        </div>
+        <div class="form-group">
+          <label>نام کاربری (انگلیسی)</label>
+          <input type="text" id="signupUsername" placeholder="ali_ahmadi" autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label>پسورد</label>
+          <input type="password" id="signupPassword" placeholder="حداقل ۶ کاراکتر" autocomplete="new-password">
+        </div>
+        <div class="form-group">
+          <label>تکرار پسورد</label>
+          <input type="password" id="signupPassword2" placeholder="••••••" autocomplete="new-password">
+        </div>
+        <div class="auth-error" id="authError"></div>
+        <button type="submit" class="btn btn-primary btn-block" id="signupBtn">ثبت‌نام</button>
+      </form>
+    </div>
+
+    <div class="auth-footer">
+      <p>با حساب کاربری، داده‌ها توی ابر ذخیره می‌شن و از هر دستگاهی قابل دسترسن.</p>
+    </div>
+  </div>
+</div>
+<script src="supabase.js"></script>
+<script src="auth.js"></script>
+<script src="sync.js"></script>
+<script src="script.js"></script>
+
+</body>
+</html>
