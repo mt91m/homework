@@ -1,6 +1,6 @@
 // ============================================================
 //  Supabase Configuration & Client
-//  نسخه ۳.۵ کامل
+//  نسخه ۴.۰ — کامل و بی‌نقص
 // ============================================================
 
 const SUPABASE_URL = 'https://sulllalgrahgbofirzpn.supabase.co';
@@ -13,14 +13,16 @@ const SupaClient = {
 
   // ---- درخواست REST ----
   async request(path, options = {}) {
+    const cleanKey = String(this.key || '').replace(/[^\x00-\x7F]/g, '').trim();
     const headers = {
-      'apikey': this.key,
+      'apikey': cleanKey,
       'Content-Type': 'application/json',
       'Prefer': options.prefer || 'return=representation',
       ...(options.headers || {})
     };
     if (this.session && this.session.access_token) {
-      headers['Authorization'] = 'Bearer ' + this.session.access_token;
+      const cleanToken = String(this.session.access_token || '').replace(/[^\x00-\x7F]/g, '').trim();
+      headers['Authorization'] = 'Bearer ' + cleanToken;
     }
     const url = this.url + path;
     const res = await fetch(url, {
@@ -31,7 +33,7 @@ const SupaClient = {
     if (!res.ok) {
       let err;
       try { err = await res.json(); } catch(e) { err = { message: res.statusText }; }
-      throw new Error(err.message || err.error_description || 'خطای Supabase');
+      throw new Error(err.message || err.error_description || err.msg || 'خطای Supabase');
     }
     if (res.status === 204) return null;
     const text = await res.text();
@@ -44,7 +46,7 @@ const SupaClient = {
     const email = username + '@school.app';
     const res = await fetch(this.url + '/auth/v1/signup', {
       method: 'POST',
-      headers: { 'apikey': this.key, 'Content-Type': 'application/json' },
+      headers: { 'apikey': String(this.key).replace(/[^\x00-\x7F]/g, '').trim(), 'Content-Type': 'application/json' },
       body: JSON.stringify({
         email: email,
         password: password,
@@ -64,7 +66,7 @@ const SupaClient = {
     const email = username + '@school.app';
     const res = await fetch(this.url + '/auth/v1/token?grant_type=password', {
       method: 'POST',
-      headers: { 'apikey': this.key, 'Content-Type': 'application/json' },
+      headers: { 'apikey': String(this.key).replace(/[^\x00-\x7F]/g, '').trim(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: email, password: password })
     });
     const data = await res.json();
@@ -79,7 +81,7 @@ const SupaClient = {
       if (this.session && this.session.access_token) {
         await fetch(this.url + '/auth/v1/logout', {
           method: 'POST',
-          headers: { 'apikey': this.key, 'Authorization': 'Bearer ' + this.session.access_token }
+          headers: { 'apikey': String(this.key).replace(/[^\x00-\x7F]/g, '').trim(), 'Authorization': 'Bearer ' + this.session.access_token }
         });
       }
     } catch(e) {}
