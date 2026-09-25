@@ -1,0 +1,159 @@
+// ============================================================
+//  Supabase Configuration & Client
+// ============================================================
+
+// ⚠️ این مقادیر رو از Supabase بذار
+const SUPABASE_URL = 'https://sulllalgrahgbofirzpn.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_ZvqddFeoqhXoOximqIDWvA_HqUB6o6r';  // ← جایگزین کن
+
+// ============================================================
+//  کلاینت سبک Supabase (بدون npm)
+// ============================================================
+const SupaClient = {
+  url: SUPABASE_URL,
+  key: SUPABASE_ANON_KEY,
+  session: null,
+
+  // درخواست REST
+  async request(path, options = {}) {
+    const headers = {
+      'apikey': this.key,
+      'Content-Type': 'application/json',
+      'Prefer': options.prefer || 'return=representation',
+      ...(options.headers || {})
+    };
+    if (this.session && this.session.access_token) {
+      headers['Authorization'] = 'Bearer ' + this.session.access_token;
+    }
+    const url = this.url + path;
+    const res = await fetch(url, {
+      method: options.method || 'GET',
+      headers: headers,
+      body: options.body ? JSON.stringify(options.body) : undefined
+    });
+    if (!res.ok) {
+      let err;
+      try { err = await res.json(); } catch(e) { err = { message: res.statusText }; }
+      throw new Error(err.message || err.error_description || 'خطای Supabase');
+    }
+    if (res.status === 204) return null;
+    return await res.json();
+  },
+
+  // ---- Auth ----
+  async signUp(username, password, firstName) {
+    // نام کاربری → ایمیل ساختگی
+    const email = username + '@school.app';
+    const res = await fetch(this.url + '/auth/v1/signup', {
+      method: 'POST',
+      headers: {
+        'apikey': this.key,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: email,
+        password: password,
+        data: { first_name: firstName, username: username }
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || data.error_description || 'خطا در ثبت‌نام');
+    if (data.access_token) {
+      this.session = data;
+      this.saveSession();
+    }
+    return data;
+  },
+
+  async signIn(username, password) {
+    const email = username + '@school.app';
+    const res = await fetch(this.url + '/auth/v1/token?grant_type=password', {
+      method: 'POST',
+      headers: {
+        'apikey': this.key,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ email: email, password: password })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error_description || data.message || 'نام کاربری یا پسورد اشتباه');
+    this.session = data;
+    this.saveSession();
+    return data;
+  },
+
+  async signOut() {
+    try {
+      if (this.session) {
+        await fetch(this.url + '/auth/v1/logout', {
+          method: 'POST',
+          headers: {
+            'apikey': this.key,
+            'Authorization': 'Bearer ' + this.session.access_token
+          }
+        });
+      }
+    } catch(e) {}
+    this.session = null;
+    localStorage.removeItem('sb_session');
+  },
+
+  saveSession() {
+    if (this.session) {
+      localStorage.setItem('sb_session', JSON.stringify(this.session));
+    }
+  },
+
+  loadSession() {
+    try {
+      const s = localStorage.getItem('sb_session');
+      if (s) {
+        this.session = JSON.parse(s);
+        // چک اعتبار
+        if (this.session.expires_at && Date.now() / 1000 > this.session.expires_at) {
+          this.session = null;
+          localStorage.removeItem('sb_session');
+        }
+      }
+    } catch(e) { this.session = null; }
+  },
+
+  isLoggedIn() {
+    return !!this.session && !!this.session.access_token;
+  },
+
+  getUserId() {
+    return this.session && this.session.user ? this.session.user.id : null;
+  },
+
+  getUserEmail() {
+    return this.session && this.session.user ? this.session.user.email : null;
+  },
+
+  getUsername() {
+    if (!this.session || !this.session.user) return null;
+    return this.session.user.user_metadata?.username || null;
+  },
+
+  getFirstName() {
+    if (!this.session || !this.session.user) return null;
+    return this.session.user.user_metadata?.first_name || null;
+  },
+
+  // ---- Database ----
+  async select(table, query = '') {
+    return await this.request(`/rest/v1/${table}?${query}`, { method: 'GET' });
+  },
+
+  async insert(table, data) {
+    return await this.request(`/rest/v1/${table}`, { method: 'POST', body: data });
+  },
+
+  async update(table, query, data) {
+    return await this.request(`/rest/v1/${table}?${query}`, { method: 'PATCH', body: data });
+  },
+
+  async delete(table, query) {
+    return await this.request(`/rest/v1/${table}?${query}`, { method: 'DELETE', prefer: 'return=minimal' });
+  }
+};
